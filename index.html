@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MDBList Profile Games</title>
+<meta name="description" content="Playground for the games that run on MDBList profile cards.">
+<style>
+  /* Page */
+  :root { --bg: #f4f6fa; --text: #1d2230; --muted: #667085; --panel: #ffffff; --border: rgba(20, 30, 50, .12);
+          --card: #ffffff; --card-2: #eef1f6; --accent: #3d7abd; }
+  html.dark { --bg: #14161c; --text: #e8ebf2; --muted: #9aa3b2; --panel: #1c1f27; --border: rgba(255, 255, 255, .1);
+              --card: #1f222b; --card-2: #2a2e39; --accent: #6aa8ec; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  a { color: var(--accent); }
+  header { max-width: 1180px; margin: 0 auto; padding: 22px 16px 8px; }
+  header h1 { margin: 0 0 4px; font-size: 1.4rem; }
+  header p { margin: 0; color: var(--muted); }
+  .controls { max-width: 1180px; margin: 0 auto; padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  .controls label { color: var(--muted); font-size: .85rem; margin-right: 6px; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .seg button, .btn { font: inherit; font-size: .9rem; padding: 6px 12px; border: 0; background: var(--panel); color: var(--text); cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  .btn { border: 1px solid var(--border); border-radius: 8px; }
+  select { font: inherit; font-size: .9rem; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); color: var(--text); }
+  .stage { margin: 8px auto 0; padding: 0 16px; transition: max-width .2s; }
+  .hint { max-width: 1180px; margin: 10px auto 40px; padding: 0 16px; color: var(--muted); font-size: .88rem; }
+  kbd { font: 12px ui-monospace, monospace; padding: 1px 5px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
+
+  /* The effect runtime's canvas (same rules as on mdblist.com) */
+  .cos-fx-host { position: relative; }
+  canvas.cos-fx-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; }
+  canvas.cos-fx-canvas.cos-fx-back { z-index: 0; }
+  .cos-fx-host.cos-fx-playing > :not(canvas) { visibility: hidden; }
+
+  /* A stand-in for the MDBList profile card: same structure and class names the games look for
+     (avatar, badges, trophies, stats row, tab strip), so the demo behaves as it does on the site. */
+  .profile-hero { position: relative; overflow: hidden; display: flex; flex-wrap: wrap; gap: 0 1.1rem; padding: 1.5rem 1.5rem .5rem;
+                  border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+  .profile-avatar { width: 96px; height: 96px; border-radius: 50%; flex: none; background: linear-gradient(135deg, #ff8c37, #ff4f81);
+                    display: grid; place-items: center; color: #fff; font-size: 38px; font-weight: 700; }
+  .profile-meta { flex: 1 1 300px; min-width: 0; }
+  .profile-meta h1 { margin: 4px 0 2px; font-size: 1.9rem; }
+  .profile-handle { color: var(--muted); }
+  .profile-trophies { display: flex; gap: 8px; margin: .8rem 0 .5rem; flex-wrap: wrap; align-items: center; }
+  .ach-badge { width: 40px; height: 48px; border-radius: 50% 50% 8px 8px; background: linear-gradient(#e7c66b, #b8913a); }
+  .ach-badge:nth-child(2) { background: linear-gradient(#d9dee7, #9aa3b2); }
+  .lb-trophy { width: 40px; height: 48px; margin-left: 12px; border-radius: 6px 6px 50% 50%; background: linear-gradient(#ff7ba0, #c23a64); }
+  .profile-actions { display: flex; gap: 8px; align-self: flex-start; }
+  .profile-actions button { font: inherit; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--card-2); color: var(--text); }
+  .profile-stats { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); align-self: flex-end; border-top: 1px solid var(--border); padding-top: .35rem; }
+  .profile-stat { text-align: center; padding: .3rem .6rem; }
+  .profile-stat b { display: block; font-size: 1.3rem; }
+  .profile-stat span { font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .phub-tabs { flex: 1 0 100%; display: flex; gap: 1.6rem; overflow-x: auto; margin-top: .5rem; padding: .7rem 0 .55rem; border-top: 1px solid var(--border); white-space: nowrap; }
+  .phub-tabs a { color: var(--muted); text-decoration: none; }
+  .phub-tabs a:first-child { color: var(--text); font-weight: 600; box-shadow: 0 .55rem 0 -.4rem var(--accent); }
+
+  /* Wide card: stats beside the details, like the site at desktop width */
+  .stage.wide .profile-stats { flex: 0 1 auto; }
+  /* Narrow card (phone): smaller avatar, stats as a full-width band, like the site */
+  .stage.narrow .profile-hero { padding: 1rem 1rem .4rem; gap: 0 .85rem; }
+  .stage.narrow .profile-avatar { width: 48px; height: 48px; font-size: 22px; }
+  .stage.narrow .profile-meta h1 { font-size: 1.35rem; }
+  .stage.narrow .profile-actions { flex: 1 0 100%; }
+  .stage.narrow .profile-actions button { flex: 1; }
+  .stage.narrow .profile-stats { flex: 1 0 100%; grid-template-columns: repeat(3, 1fr); grid-auto-flow: row; }
+  .stage.narrow .phub-tabs { gap: 1.2rem; }
+  /* "Card content" off: an empty card of the same size, nothing for the demo to hop on */
+  .profile-hero.no-content { min-height: 250px; }
+  .stage.narrow .profile-hero.no-content { min-height: 330px; }
+  .profile-hero.no-content > :not(canvas) { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>MDBList Profile Games</h1>
+  <p>The games that run on <a href="https://mdblist.com">MDBList</a> profile cards. Press <kbd>P</kbd> or click the card to play.</p>
+</header>
+
+<div class="controls">
+  <span><label for="game">Game</label><select id="game"></select></span>
+  <span><label>Size</label><span class="seg" id="size">
+    <button type="button" data-w="1180" aria-pressed="true">Desktop</button>
+    <button type="button" data-w="768">Tablet</button>
+    <button type="button" data-w="400">Phone</button>
+  </span></span>
+  <span><label>Theme</label><span class="seg" id="theme">
+    <button type="button" data-theme="dark" aria-pressed="true">Dark</button>
+    <button type="button" data-theme="light">Light</button>
+  </span></span>
+  <span><label><input type="checkbox" id="content" checked> Card content</label></span>
+  <button type="button" class="btn" id="restart">Restart</button>
+</div>
+
+<div class="stage wide" id="stage" style="max-width: 1180px">
+  <section class="profile-hero" id="card" data-arcade-play>
+    <div class="profile-avatar">P</div>
+    <div class="profile-meta">
+      <h1>Player One</h1>
+      <div class="profile-handle">@player1 · Joined Jan 1, 2026</div>
+      <div class="profile-trophies">
+        <span class="ach-badge" title="Badge"></span><span class="ach-badge" title="Badge"></span><span class="ach-badge" title="Badge"></span>
+        <span class="lb-trophy" title="Leaderboard"></span>
+      </div>
+    </div>
+    <div class="profile-actions"><button type="button">Compare</button><button type="button">Follow</button></div>
+    <div class="profile-stats">
+      <div class="profile-stat"><span>Movies</span><b>607</b></div>
+      <div class="profile-stat"><span>Shows</span><b>126</b></div>
+      <div class="profile-stat"><span>Lists</span><b>12</b></div>
+      <div class="profile-stat"><span>Likes</span><b>48</b></div>
+      <div class="profile-stat"><span>Following</span><b>2</b></div>
+      <div class="profile-stat"><span>Followers</span><b>1</b></div>
+    </div>
+    <nav class="phub-tabs"><a href="#">Overview</a><a href="#">Up Next</a><a href="#">Watchlist</a><a href="#">History</a><a href="#">Ratings</a><a href="#">Collection</a><a href="#">Stats</a></nav>
+  </section>
+</div>
+
+<p class="hint">Scores here stay in this browser (the game keeps its own high score). On mdblist.com the
+  site saves them for its leaderboards; that part isn't in this repo. Making a game? See
+  <a href="CONTRIBUTING.md">CONTRIBUTING.md</a>.</p>
+
+<script src="runtime.js"></script>
+<!-- Games: one file each. Add yours here. -->
+<script src="games/player-one.js"></script>
+<script>
+(function () {
+  var FX = window.MDBCosmetics, card = document.getElementById('card'), stage = document.getElementById('stage');
+  var select = document.getElementById('game'), fx = null;
+  var NAMES = { arcade: 'Player One' };
+
+  // Layout hints, worked out the way mdblist.com does for its profile card: the demo walks on the
+  // stats row's top line, or on the tab strip when the stats sit beside the details; the bottom
+  // HUD line belongs to the tabs, so the demo leaves its XP bar off and shows its "play" prompt
+  // only where the strip's right end is empty.
+  function scene() {
+    var hr = card.getBoundingClientRect(), stats = card.querySelector('.profile-stats'), tabs = card.querySelector('.phub-tabs');
+    if (!hr.width || !card.querySelector('.profile-avatar').offsetParent) return {};
+    var statsTop = stats.getBoundingClientRect().top - hr.top;
+    var out = stats.offsetWidth < hr.width * 0.8 ? { ground: tabs.getBoundingClientRect().top - hr.top - 1 } : { ground: statsTop - 1 };
+    out.hud = false;
+    var lastTab = hr.left;
+    tabs.querySelectorAll('a').forEach(function (a) { lastTab = Math.max(lastTab, a.getBoundingClientRect().right); });
+    out.prompt = hr.right - lastTab >= 200;
+    return out;
+  }
+
+  function mount() {
+    if (fx) { fx.destroy(); fx = null; }
+    card.setAttribute('data-cos-effect', select.value);
+    fx = FX.mountEffect(card, select.value, { scene: scene, force: true });
+  }
+
+  FX.effects.forEach(function (key) {
+    var o = document.createElement('option'); o.value = key; o.textContent = NAMES[key] || key; select.appendChild(o);
+  });
+  select.addEventListener('change', mount);
+
+  function pick(group, attr, apply) {
+    group.addEventListener('click', function (e) {
+      var b = e.target.closest('button'); if (!b) return;
+      group.querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+      apply(b.getAttribute(attr));
+    });
+  }
+  pick(document.getElementById('size'), 'data-w', function (w) {
+    stage.style.maxWidth = w + 'px';
+    stage.classList.toggle('narrow', +w < 600);
+    stage.classList.toggle('wide', +w >= 1100);
+  });
+  pick(document.getElementById('theme'), 'data-theme', function (t) {
+    document.documentElement.classList.toggle('dark', t === 'dark');  // games read html.dark each frame
+  });
+  document.getElementById('content').addEventListener('change', function () {
+    card.classList.toggle('no-content', !this.checked); mount();
+  });
+  document.getElementById('restart').addEventListener('click', mount);
+  card.addEventListener('click', function (e) { if (e.target.closest('a')) e.preventDefault(); });
+
+  mount();
+})();
+</script>
+</body>
+</html>
