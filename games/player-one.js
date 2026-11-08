@@ -12,6 +12,104 @@
   function seeded(seed) { return function () { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; }; }
   function isDark() { return document.documentElement.classList.contains('dark'); }
 
+  // Sounds: little chiptune blips made in code with Web Audio (no audio files). Only during a
+  // game, never in the demo: the audio starts on the key press or tap that starts the game, as
+  // browsers require, and sleeps again when the game ends. M mutes, and the choice is remembered.
+  var SFX = { ctx: null, out: null, noise: null, muted: false, live: false };
+  try { SFX.muted = window.localStorage.getItem('mdb-arcade-mute') === '1'; } catch (e) { /* storage blocked */ }
+  function sfxInit() {
+    if (!SFX.ctx) {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      try {
+        SFX.ctx = new AC(); SFX.out = SFX.ctx.createGain(); SFX.out.gain.value = 0.3; SFX.out.connect(SFX.ctx.destination);
+        var len = Math.round(SFX.ctx.sampleRate * 0.5), buf = SFX.ctx.createBuffer(1, len, SFX.ctx.sampleRate), d = buf.getChannelData(0);
+        for (var k = 0; k < len; k++) d[k] = Math.random() * 2 - 1;
+        SFX.noise = buf;
+        // 'pulse': a thin 25% square, the reedy tone of old console chips (a plain square is 50%).
+        var re = new Float32Array(32), im = new Float32Array(32);
+        for (k = 1; k < 32; k++) re[k] = 2 / (k * Math.PI) * Math.sin(k * Math.PI * 0.25);
+        SFX.pulse = SFX.ctx.createPeriodicWave(re, im);
+      } catch (e) { SFX.ctx = null; return; }
+    }
+    sfxWake();
+  }
+  // Every frame of a game keeps the audio awake. When the frames stop (the card scrolled off
+  // screen, the tab went hidden, a resize rebuilt the card), a check once a second puts it to
+  // sleep; the next frame of a game wakes it again. No check runs outside a game.
+  function sfxWake() {
+    SFX.live = true; SFX.seen = performance.now();
+    if (SFX.ctx && SFX.ctx.state === 'suspended') SFX.ctx.resume();
+    if (!SFX.watch) SFX.watch = setTimeout(sfxWatch, 1000);
+  }
+  function sfxWatch() {
+    SFX.watch = 0;
+    if (!SFX.live) return;
+    if (performance.now() - SFX.seen > 1500) { SFX.live = false; if (SFX.ctx && SFX.ctx.state === 'running') SFX.ctx.suspend(); return; }
+    SFX.watch = setTimeout(sfxWatch, 1000);
+  }
+  // The game is over: let the last jingle ring out, then put the audio to sleep (saves battery).
+  function sfxSleep(after) {
+    SFX.live = false;
+    setTimeout(function () { if (SFX.ctx && !SFX.live && SFX.ctx.state === 'running') SFX.ctx.suspend(); }, after);
+  }
+  // Sounds made while a resume is still pending just wait for it, so this checks live, not 'running'.
+  function sfxReady() { return SFX.ctx && !SFX.muted && SFX.live; }
+  // One note: a wave sliding from f0 to f1 Hz over dur seconds, starting `at` seconds from now.
+  // vib: a wobble on the pitch (0.02 = 2% either way), for held notes.
+  function tone(type, f0, f1, dur, vol, at, vib) {
+    if (!sfxReady()) return;
+    var c = SFX.ctx, t0 = c.currentTime + (at || 0), o = c.createOscillator(), g = c.createGain();
+    if (type === 'pulse') o.setPeriodicWave(SFX.pulse); else o.type = type;
+    o.frequency.setValueAtTime(f0, t0);
+    if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t0 + dur);
+    if (vib) {
+      var lfo = c.createOscillator(), depth = c.createGain();
+      lfo.frequency.value = 7; depth.gain.value = f0 * vib; lfo.connect(depth); depth.connect(o.frequency);
+      lfo.start(t0); lfo.stop(t0 + dur + 0.02);
+    }
+    g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(vol, t0 + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g); g.connect(SFX.out); o.start(t0); o.stop(t0 + dur + 0.02);
+  }
+  // A burst of noise through a falling low-pass filter: thuds and explosions.
+  function hiss(dur, vol, f0, f1, at) {
+    if (!sfxReady()) return;
+    var c = SFX.ctx, t0 = c.currentTime + (at || 0), src = c.createBufferSource(), flt = c.createBiquadFilter(), g = c.createGain();
+    src.buffer = SFX.noise; flt.type = 'lowpass'; flt.frequency.setValueAtTime(f0, t0); flt.frequency.exponentialRampToValueAtTime(f1, t0 + dur);
+    g.gain.setValueAtTime(vol, t0); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(flt); flt.connect(g); g.connect(SFX.out); src.start(t0); src.stop(t0 + dur + 0.02);
+  }
+  function notes(type, freqs, step, dur, vol, at) { freqs.forEach(function (f, k) { tone(type, f, f, dur, vol, (at || 0) + k * step); }); }
+  // Each jingle has its own shape: GO climbs four even steps (C), the heart is a quick lift into
+  // a warm held note (A), the level-up runs up and lands on a held chord (D), GAME OVER falls.
+  var SOUNDS = {
+    go: function () { notes('square', [523, 659, 784, 1047], 0.07, 0.12, 0.25); },
+    jump: function () { tone('pulse', 280, 620, 0.13, 0.24); },
+    coin: function () { tone('pulse', 1047, 1047, 0.06, 0.22); tone('pulse', 1568, 1568, 0.2, 0.22, 0.06); },
+    gem: function () { notes('triangle', [1047, 1319, 1568, 2093], 0.045, 0.12, 0.35); },
+    heart: function () { notes('square', [659, 880], 0.05, 0.08, 0.18); tone('square', 1109, 1109, 0.4, 0.18, 0.1, 0.02); },
+    // n: which stomp of a chain this is (1 = a plain stomp). Each one in a row lands a whole
+    // tone higher with a blip on top; from x3 on, a sparkle too.
+    stomp: function (n) {
+      var c = Math.min(n || 1, 9) - 1, up = Math.pow(2, c / 6);
+      tone('pulse', 520 * up, 90 * up, 0.16, 0.32); hiss(0.08, 0.25, 3000, 400);
+      if (c > 0) tone('pulse', 784 * up, 784 * up, 0.08, 0.16, 0.05);
+      if (c > 1) notes('triangle', [1568 * up, 2093 * up], 0.04, 0.1, 0.14, 0.1);
+    },
+    hurt: function () { tone('sawtooth', 440, 110, 0.35, 0.25); hiss(0.15, 0.2, 2000, 300); },
+    level: function () {
+      notes('square', [587, 740, 880, 1175], 0.06, 0.09, 0.2);
+      tone('square', 1175, 1175, 0.45, 0.2, 0.26, 0.015); tone('triangle', 740, 740, 0.45, 0.3, 0.26); tone('triangle', 440, 440, 0.45, 0.3, 0.26);
+    },
+    // The thump stays above ~80 Hz, and a square adds overtones, so phone and laptop speakers play it too.
+    boom: function () { hiss(0.55, 0.5, 1800, 60); tone('sine', 160, 70, 0.4, 0.4); tone('square', 220, 85, 0.3, 0.1); },
+    warn: function () { tone('square', 880, 880, 0.08, 0.15); tone('square', 880, 880, 0.08, 0.15, 0.14); },
+    over: function () { notes('triangle', [392, 330, 262, 196], 0.22, 0.3, 0.35); },
+    land: function (v) { hiss(0.07, 0.05 + 0.12 * v, 900, 150); tone('triangle', 190, 85, 0.08, 0.06 + 0.14 * v); },  // v: how hard, 0..1
+    step: function () { hiss(0.03, 0.04, 1800 + Math.random() * 900, 700); }  // a soft footstep, a little different each time
+  };
+  function sfx(name, arg) { if (SOUNDS[name]) SOUNDS[name](arg); }
+
   // Player One's controls: one set of page listeners for the whole page, bound on first use.
   // Input goes to the game that drew most recently (the live card, not a picker still) and
   // only when it's playable (drawn on a single canvas, so not under a list header's content).
@@ -31,6 +129,7 @@
       if (g.mode() !== 'play') { if (k === 'p' || k === 'P') { e.preventDefault(); g.start(); } return; }
       if (/^(ArrowLeft|ArrowRight|ArrowUp|ArrowDown| |a|d|w|A|D|W|Escape)$/.test(k)) e.preventDefault();  // no page scrolling mid-game
       if (k === 'Escape') { g.quit(); return; }
+      if (k === 'm' || k === 'M') { e.preventDefault(); if (!e.repeat) g.toggleMute(); return; }
       ARCADE.keys[k.toLowerCase()] = true;
       if (!e.repeat && (k === ' ' || k === 'ArrowUp' || k === 'w' || k === 'W')) g.jump();
     });
@@ -45,7 +144,9 @@
       if (!g || !inside(g, e)) return;
       if (e.target && e.target.closest && e.target.closest('a,button,input,textarea,select,label,[role=button],[contenteditable]')) return;  // real controls still work
       if (g.mode() !== 'play') { g.start(); return; }
-      ARCADE.pointer = e.clientX - g.canvas.getBoundingClientRect().left; g.jump();
+      var cr = g.canvas.getBoundingClientRect();
+      if (g.muteHit(e.clientX - cr.left, e.clientY - cr.top)) { g.toggleMute(); return; }
+      ARCADE.pointer = e.clientX - cr.left; g.jump();
     });
     document.addEventListener('pointermove', function (e) {
       var g = arcadeLive();
@@ -100,8 +201,11 @@
     var METEOR = { rows: ['..rrr.', '.rRRrr', 'rRrrRr', 'rrRrrr', '.rrrR.', '..rr..'], pal: { r: '#7a4a2a', R: '#b8743f' } };
     // Comet: a rare fast streak (head on the right; flipped when it flies left).
     var COMET = { rows: ['....ooyW.', '.ooooyyWW', 'oooyyyWWW', '.ooooyyWW', '....ooyW.'], pal: { o: '#ff3b6b', y: '#ffb03b', W: '#ffffff' } };
+    // The mute button's speaker: sound waves when on, a red cross when muted.
+    var SPEAKER_ON = { rows: ['...w.....', '..ww...w.', 'wwww.w..w', 'wwww.w..w', 'wwww.w..w', '..ww...w.', '...w.....'], pal: { w: '#ffffff' } };
+    var SPEAKER_OFF = { rows: ['...w.....', '..ww.....', 'wwww.r.r.', 'wwww..r..', 'wwww.r.r.', '..ww.....', '...w.....'], pal: { w: '#ffffff', r: '#ff3b5c' } };
     var RAINBOW = ['#ff3b5c', '#ff9a1f', '#ffe14d', '#6ee05a', '#3ee0ff', '#7a5cff', '#ff5cd6'];
-    var P = { x: w * 0.3, y: ground, vx: 0, vy: 0, onGround: true, dir: 1, inv: 0, hearts: 3, jumpBuf: 0, coyote: 0, squash: 0, chain: 0 };
+    var P = { x: w * 0.3, y: ground, vx: 0, vy: 0, onGround: true, dir: 1, inv: 0, hearts: 3, jumpBuf: 0, coyote: 0, squash: 0, chain: 0, stepD: 0 };
     var mode = 'demo', loot = [], sparks = [], pops = [], enemies = [], spikes = [], xp = 0, level = 1, levelT = 0, XP_PER_LEVEL = 100;
     var plats = [], meteors = [], craters = [], lava = [], meteorT = 0, platT = 0;
     // The demo plays on the page itself: the card's real buttons, labels, badges and avatar
@@ -374,13 +478,15 @@
       mode = 'play'; score = 0; level = 1; xp = 0; enemies = []; enemyT = 2.5; goT = 0.8; playT = 0; setPlaying(true);
       ground = playGround;
       P.x = w * 0.2; P.y = ground; P.vx = P.vy = 0; P.hearts = 3; P.inv = 1; P.dir = 1;
-      ARCADE.keys = {}; ARCADE.pointer = null; P.onGround = true; P.jumpBuf = 0; P.coyote = 0; P.chain = 0;
+      ARCADE.keys = {}; ARCADE.pointer = null; P.onGround = true; P.jumpBuf = 0; P.coyote = 0; P.chain = 0; P.stepD = 0;
       P.sleep = 0; P.bonk = null; critter = null;  // wake up, it's game time
       loot = []; sparks = []; pops = []; bumps = []; levelT = 0;  // and a clean screen: nothing left over from the demo
       beginScoring();
+      sfxInit(); sfx('go');
       spikes = []; meteors = []; craters = []; lava = []; meteorT = 4; platT = 4; placePlats(); addSpikes(); coinRoute();
     }
     function quit() {
+      if (mode === 'play') sfxSleep(400);
       mode = 'demo'; enemies = []; spikes = []; plats = []; meteors = []; craters = []; lava = []; setPlaying(false);
       ground = demoGround; P.y = Math.min(P.y, ground); P.vy = 0;  // back up onto the demo's floor
       loot.forEach(function (l) {
@@ -389,17 +495,26 @@
       });
     }
     function jump() { P.jumpBuf = 0.15; }
+    // Where the mute button sits (top right, under the score), for drawing and for taps.
+    function muteBox() { return { x0: w - px * 20, x1: w - px * 2, y0: px * 10, y1: px * 19 }; }
+    function muteHit(x, y) { var b = muteBox(); return x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1; }
+    function toggleMute() {
+      SFX.muted = !SFX.muted;
+      try { window.localStorage.setItem('mdb-arcade-mute', SFX.muted ? '1' : '0'); } catch (e) { /* storage blocked */ }
+      if (!SFX.muted) { sfxInit(); sfx('coin'); }
+      pop(P.x, P.y - px * 12, SFX.muted ? 'SOUND OFF' : 'SOUND ON', '#ffffff');
+    }
     function releaseJump() { if (mode === 'play' && P.vy < -JUMP * 0.45) P.vy = -JUMP * 0.45; }
     function hurt(fromX) {
       if (P.inv > 0) return;
       P.chain = 0;
-      P.hearts--; P.inv = 1.4; P.vy = -JUMP * 0.55; P.vx = (P.x < fromX ? -1 : 1) * RUN * 1.4;
+      P.hearts--; P.inv = 1.4; sfx(P.hearts > 0 ? 'hurt' : 'over'); P.vy = -JUMP * 0.55; P.vx = (P.x < fromX ? -1 : 1) * RUN * 1.4;
       pop(P.x, P.y - px * 12, '-1', '#ff3b5c'); burst(P.x, P.y - px * 4, 12, ['#ff3b5c', '#ffffff'], 140 * px / 3);
       if (P.hearts <= 0) {
         mode = 'over'; overT = 0; enemies = [];
         if (savedBest() != null) hi = savedBest();
         if (score > hi) { hi = score; try { window.localStorage.setItem('mdb-arcade-hi', String(hi)); } catch (e) { /* storage blocked */ } }
-        finishScoring();
+        finishScoring(); sfxSleep(1500);
       }
     }
     function addScore(v) { score += v; }
@@ -425,7 +540,7 @@
       session.finish(result);
     }
     function savedBest() { var b = session && session.best(); return b == null ? null : b; }
-    var handle = { canvas: null, seen: 0, mode: function () { return mode; }, start: start, quit: quit, jump: jump, releaseJump: releaseJump };
+    var handle = { canvas: null, seen: 0, mode: function () { return mode; }, start: start, quit: quit, jump: jump, releaseJump: releaseJump, toggleMute: toggleMute, muteHit: muteHit };
     if (resumed) for (i = 0; i < 3; i++) { drop(); loot[i].y = ground; loot[i].landed = true; }
     return { intro: 1.6, loop: 6, rest: 4, layered: true, poster: 3.2, draw: function (front, w, h, phase, t, dt, T, edge, back) {
       // Playable only on a single canvas (not under a list header's content) whose card is marked
@@ -436,6 +551,7 @@
       else if (mode !== 'demo') quit();  // a game only runs where it can be played
       if (mode === 'demo') { measureT -= dt; if (measureT <= 0) { measureT = 1; measurePage(front.canvas && front.canvas.parentNode, front.canvas); } }
       var playing = mode === 'play';
+      if (playing && SFX.ctx) sfxWake();
       // Every level speeds the world up (enemies, spawns, falling loot), up to about 2.5x.
       var pace = playing || mode === 'over' ? Math.min(2.5, 1 + 0.15 * (level - 1)) : 1, wdt = dt * pace;
       frameT += dt; if (mode !== 'demo') playT += dt;
@@ -501,10 +617,13 @@
       P.vx += (target * speed - P.vx) * Math.min(1, dt * (P.inv > 1 ? 2 : 12));
       if (target) P.dir = target;
       P.coyote = P.onGround ? 0.09 : Math.max(0, P.coyote - dt);
-      if (P.jumpBuf > 0) { P.jumpBuf -= dt; if ((P.onGround || P.coyote > 0) && playing) { P.vy = -JUMP; P.jumpBuf = 0; P.coyote = 0; P.onGround = false; P.chain = 0; } }
+      if (P.jumpBuf > 0) { P.jumpBuf -= dt; if ((P.onGround || P.coyote > 0) && playing) { P.vy = -JUMP; P.jumpBuf = 0; P.coyote = 0; P.onGround = false; P.chain = 0; sfx('jump'); } }
       var py = P.y; P.vy += G * dt; P.x += P.vx * dt; P.y += P.vy * dt;
       var was = P.onGround, floor = P.vy >= 0 ? floorAt(P.x, py, P.y) : ground;  // jump up through platforms, land on them from above
+      var fall = P.vy;  // how fast it came down, for the landing thud
       if (P.y >= floor) { P.y = floor; P.vy = 0; P.onGround = true; P.chain = 0; if (!was) { P.squash = 0.12; if (playing) burst(P.x, P.y, 5, ['#c8bca0', '#ffffff'], 22 * px); } } else P.onGround = false;
+      if (playing && P.onGround && !was) { sfx('land', clamp(fall / (JUMP * 1.3))); P.stepD = 0; }
+      if (playing && P.onGround && Math.abs(P.vx) > RUN * 0.3 && (P.stepD += Math.abs(P.vx) * dt) > px * 9) { P.stepD = 0; sfx('step'); }  // a footstep every few steps
       if (P.bonk) {  // head meets the ledge from below: a bump, and a coin pops out over its top
         var bk = P.bonk;
         if (P.vy < 0 && P.y - px * 7 <= bk.bottom && P.x > bk.x0 && P.x < bk.x1) {
@@ -542,14 +661,14 @@
         var sp = SPRITES[l.kind];
         pop(l.x, P.y - px * 10, sp.label, sp.c);
         burst(l.x, l.y - px * 3, 10, [sp.pal[Object.keys(sp.pal)[1]], '#ffffff'], 120 * px / 3);
-        if (playing) { addScore(sp.score); tally[l.kind + 's']++; if (l.kind === 'heart') P.hearts = Math.min(5, P.hearts + 1); }
+        if (playing) { sfx(l.kind); addScore(sp.score); tally[l.kind + 's']++; if (l.kind === 'heart') P.hearts = Math.min(5, P.hearts + 1); }
         xp += sp.xp;  // whole XP points, a level every XP_PER_LEVEL: integers, so a server's re-count matches exactly
         if (xp >= XP_PER_LEVEL) {
           var previousStage = stageIndex();
           xp -= XP_PER_LEVEL; level++; levelT = 1.6;
           burst(w / 2, h * 0.3, 36, RAINBOW, 220 * px / 3);
           if (playing) {
-            addScore(100); tally.levelups++;
+            addScore(100); tally.levelups++; sfx('level');
             if (stageIndex() !== previousStage) {
               // Clear the wave and change the route safely under the player's feet.
               changedStage = true; enemies = []; meteors = []; lava = []; spikes = []; craters = [];
@@ -579,6 +698,7 @@
               enemies.push({ kind: 'walk', warn: 0.65, plat: bp, x: bx, dir: Math.random() < 0.5 ? -1 : 1, ph: rnd(0, TAU), y: bp.y, v: 7 * px, vy: 0, hopT: rnd(1.5, 3) });
               burst(bx, bp.y - px * 3, 12, ['#a04cff', '#ffffff'], 90 * px / 3);
             } else if (level >= 4 && roll < 0.15) {
+              sfx('warn');
               enemies.push({ kind: 'dash', warn: 0.9, dir: side ? -1 : 1, x: side ? w + px * 8 : -px * 8, y: Math.random() < 0.5 ? ground : ground - px * 13, v: 85 * px, ph: 0 });
             } else {
               var fly = level >= 5 || (level >= 3 && Math.random() < 0.4), low = fly && Math.random() < (level >= 5 ? 0.45 : 0.2);
@@ -632,7 +752,7 @@
               var pts = 50 + P.chain * 25;
               tally.chainSteps += P.chain;  // the chain bonus is 25 x chainSteps, so a server can check the score
               P.chain++;
-              P.vy = -JUMP * 0.7; addScore(pts); tally.stomps++;
+              P.vy = -JUMP * 0.7; addScore(pts); tally.stomps++; sfx('stomp', P.chain);
               var popLabel = P.chain > 1 ? '+' + pts + ' x' + P.chain : '+' + pts;
               var popCol = P.chain > 1 ? (P.chain >= 3 ? '#ff3bee' : '#ff9a1f') : '#ffe14d';
               pop(e.x, top - px * 4, popLabel, popCol);
@@ -684,6 +804,7 @@
             sparks.push({ x: mx + rnd(-px, px), y: my - px * 3, vx: (m.sx - m.tx) * 0.3 + rnd(-20, 20), vy: rnd(-40, -10), life: 0.4, c: Math.random() < 0.5 ? '#ff6a1f' : '#ffd23f' });
             if (Math.abs(P.x - mx) < px * 6 && Math.abs(P.y - px * 3 - my) < px * 6) hurt(mx);
             if (q >= 1) {
+              sfx('boom');
               burst(m.tx, m.ty - px * 2, 26, ['#ff6a1f', '#ffd23f', '#7a4a2a', '#ffffff'], 200 * px / 3);
               if (m.ty >= ground) lava.push({ x: m.tx, half: px * 7, life: LAVA_LIFE });  // a pool of lava where it struck the ground
               else craters.push({ x: m.tx, y: m.ty, life: 2 });                            // a platform just gets scorched
@@ -768,6 +889,10 @@
       if (playing) {
         for (i = 0; i < P.hearts; i++) sprite(front, SPRITES.heart, px * 6 + i * px * 6, px * 9, 0.7, 0.7);
         pixelText(front, 'SCORE ' + score, w - px * 4, px * 6, px * 0.65, '#ffffff', '#15151a', 1, 'right');
+        var mb = muteBox();
+        front.fillStyle = 'rgba(10,10,20,.55)'; front.fillRect(mb.x0, mb.y0, mb.x1 - mb.x0, mb.y1 - mb.y0);
+        pixelText(front, 'M', mb.x0 + px * 4, (mb.y0 + mb.y1) / 2 + px * 0.5, px * 0.6, '#ffe14d', '#15151a');
+        sprite(front, SFX.muted ? SPEAKER_OFF : SPEAKER_ON, mb.x1 - px * 6.5, mb.y1 - px);
       } else if (mode === 'demo' && playable && scene.prompt !== false && phase !== 'intro' && Math.floor(frameT * 1.6) % 2) {
         pixelText(front, 'P / TAP TO PLAY', w - px * 4, by0 + px, px * 0.6, '#ffe14d', '#15151a', 0.9, 'right');
       }
@@ -786,7 +911,7 @@
         pixelText(front, stageIndex() !== stageIndex(level - 1) ? stage().name : 'LEVEL ' + level, w / 2, h * 0.3, px * 1.4 * lp, RAINBOW[Math.floor(T * 12) % RAINBOW.length], '#15151a', clamp(levelT * 2.5));
       }
       if (playing && playT < 5) {
-        pixelText(front, w < 420 ? 'ARROWS / WASD + SPACE' : 'MOVE ARROWS / WASD   JUMP SPACE   ESC EXIT', w / 2, h - px * 1.5, px * 0.45, '#ffffff', '#15151a', Math.min(1, 5 - playT));
+        pixelText(front, w < 420 ? 'ARROWS / WASD + SPACE' : 'MOVE ARROWS / WASD   JUMP SPACE   M MUTE   ESC EXIT', w / 2, h - px * 1.5, px * 0.45, '#ffffff', '#15151a', Math.min(1, 5 - playT));
       }
       if (goT > 0) { goT -= dt; pixelText(front, 'GO!', w / 2, h * 0.4, px * 1.6, '#6ee05a', '#15151a', clamp(goT * 2)); }
       if (mode === 'over') {
