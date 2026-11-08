@@ -101,7 +101,7 @@
     // Comet: a rare fast streak (head on the right; flipped when it flies left).
     var COMET = { rows: ['....ooyW.', '.ooooyyWW', 'oooyyyWWW', '.ooooyyWW', '....ooyW.'], pal: { o: '#ff3b6b', y: '#ffb03b', W: '#ffffff' } };
     var RAINBOW = ['#ff3b5c', '#ff9a1f', '#ffe14d', '#6ee05a', '#3ee0ff', '#7a5cff', '#ff5cd6'];
-    var P = { x: w * 0.3, y: ground, vx: 0, vy: 0, onGround: true, dir: 1, inv: 0, hearts: 3, jumpBuf: 0, coyote: 0, squash: 0 };
+    var P = { x: w * 0.3, y: ground, vx: 0, vy: 0, onGround: true, dir: 1, inv: 0, hearts: 3, jumpBuf: 0, coyote: 0, squash: 0, chain: 0 };
     var mode = 'demo', loot = [], sparks = [], pops = [], enemies = [], spikes = [], xp = 0, level = 1, levelT = 0, XP_PER_LEVEL = 100;
     var plats = [], meteors = [], craters = [], lava = [], meteorT = 0, platT = 0;
     // The demo plays on the page itself: the card's real buttons, labels, badges and avatar
@@ -374,7 +374,7 @@
       mode = 'play'; score = 0; level = 1; xp = 0; enemies = []; enemyT = 2.5; goT = 0.8; playT = 0; setPlaying(true);
       ground = playGround;
       P.x = w * 0.2; P.y = ground; P.vx = P.vy = 0; P.hearts = 3; P.inv = 1; P.dir = 1;
-      ARCADE.keys = {}; ARCADE.pointer = null; P.onGround = true; P.jumpBuf = 0; P.coyote = 0;
+      ARCADE.keys = {}; ARCADE.pointer = null; P.onGround = true; P.jumpBuf = 0; P.coyote = 0; P.chain = 0;
       P.sleep = 0; P.bonk = null; critter = null;  // wake up, it's game time
       loot = []; sparks = []; pops = []; bumps = []; levelT = 0;  // and a clean screen: nothing left over from the demo
       beginScoring();
@@ -392,6 +392,7 @@
     function releaseJump() { if (mode === 'play' && P.vy < -JUMP * 0.45) P.vy = -JUMP * 0.45; }
     function hurt(fromX) {
       if (P.inv > 0) return;
+      P.chain = 0;
       P.hearts--; P.inv = 1.4; P.vy = -JUMP * 0.55; P.vx = (P.x < fromX ? -1 : 1) * RUN * 1.4;
       pop(P.x, P.y - px * 12, '-1', '#ff3b5c'); burst(P.x, P.y - px * 4, 12, ['#ff3b5c', '#ffffff'], 140 * px / 3);
       if (P.hearts <= 0) {
@@ -405,14 +406,15 @@
     // Scores beyond this browser are optional: a site can plug in MDBCosmetics.arcadeScores
     //   .start(cardEl) -> a session for this game, or null when this card doesn't save scores
     //   session.finish(result)  at GAME OVER; result = {score, level, duration, coins, gems,
-    //                           hearts, stomps, levelups} (what the score is made of)
+    //                           hearts, stomps, levelups, chainSteps} (what the score is made of:
+    //                           a stomp is 50, plus 25 for each stomp before it in the same air-time)
     //   session.line()          a line for the GAME OVER screen, or null (e.g. 'SAVING...')
     //   session.good()          show that line in green (a new best)
     //   session.best()          the player's saved best score, or null when not known (yet)
     // Without it (the open playground) the game keeps its high score in this browser only.
     var tally = null, session = null;
     function beginScoring() {
-      tally = { coins: 0, gems: 0, hearts: 0, stomps: 0, levelups: 0 };
+      tally = { coins: 0, gems: 0, hearts: 0, stomps: 0, levelups: 0, chainSteps: 0 };
       var hooks = FX.arcadeScores;
       session = hooks && hooks.start ? hooks.start(host) : null;
     }
@@ -499,10 +501,10 @@
       P.vx += (target * speed - P.vx) * Math.min(1, dt * (P.inv > 1 ? 2 : 12));
       if (target) P.dir = target;
       P.coyote = P.onGround ? 0.09 : Math.max(0, P.coyote - dt);
-      if (P.jumpBuf > 0) { P.jumpBuf -= dt; if ((P.onGround || P.coyote > 0) && playing) { P.vy = -JUMP; P.jumpBuf = 0; P.coyote = 0; P.onGround = false; } }
+      if (P.jumpBuf > 0) { P.jumpBuf -= dt; if ((P.onGround || P.coyote > 0) && playing) { P.vy = -JUMP; P.jumpBuf = 0; P.coyote = 0; P.onGround = false; P.chain = 0; } }
       var py = P.y; P.vy += G * dt; P.x += P.vx * dt; P.y += P.vy * dt;
       var was = P.onGround, floor = P.vy >= 0 ? floorAt(P.x, py, P.y) : ground;  // jump up through platforms, land on them from above
-      if (P.y >= floor) { P.y = floor; P.vy = 0; P.onGround = true; if (!was) { P.squash = 0.12; if (playing) burst(P.x, P.y, 5, ['#c8bca0', '#ffffff'], 22 * px); } } else P.onGround = false;
+      if (P.y >= floor) { P.y = floor; P.vy = 0; P.onGround = true; P.chain = 0; if (!was) { P.squash = 0.12; if (playing) burst(P.x, P.y, 5, ['#c8bca0', '#ffffff'], 22 * px); } } else P.onGround = false;
       if (P.bonk) {  // head meets the ledge from below: a bump, and a coin pops out over its top
         var bk = P.bonk;
         if (P.vy < 0 && P.y - px * 7 <= bk.bottom && P.x > bk.x0 && P.x < bk.x1) {
@@ -627,8 +629,14 @@
           var top = e.y - (e.kind === 'fly' ? 5 : 6) * px;
           if (Math.abs(P.x - e.x) < px * 6.5 && P.y > top && P.y - px * 7 < e.y) {
             if (P.vy > 0 && P.y - top < px * 4) {  // stomped from above
-              P.vy = -JUMP * 0.7; addScore(50); tally.stomps++; pop(e.x, top - px * 4, '+50', '#ffe14d');
-              burst(e.x, top, 16, e.kind === 'fly' ? ['#ff6a1f', '#ffd23f'] : ['#a04cff', '#5e1fa8', '#ffffff'], 150 * px / 3);
+              var pts = 50 + P.chain * 25;
+              tally.chainSteps += P.chain;  // the chain bonus is 25 x chainSteps, so a server can check the score
+              P.chain++;
+              P.vy = -JUMP * 0.7; addScore(pts); tally.stomps++;
+              var popLabel = P.chain > 1 ? '+' + pts + ' x' + P.chain : '+' + pts;
+              var popCol = P.chain > 1 ? (P.chain >= 3 ? '#ff3bee' : '#ff9a1f') : '#ffe14d';
+              pop(e.x, top - px * 4, popLabel, popCol);
+              burst(e.x, top, 16 + Math.min(16, P.chain * 4), e.kind === 'fly' ? ['#ff6a1f', '#ffd23f'] : ['#a04cff', '#5e1fa8', '#ffffff'], (150 + Math.min(90, P.chain * 20)) * px / 3);
               return false;
             }
             hurt(e.x);
