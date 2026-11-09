@@ -18,7 +18,7 @@
    stretch of starfield between them, and stop getting busier after a few levels. Wrecks drop
    coins, gems, hearts, P chips (more guns: a second one kept until a hit, then a three-way spread
    for a few seconds; a hit costs one) and, rarely, a shield that takes one hit or wears off. Enemies can't be hit until
-   they're on the card. Every tenth level is an extra heart (1UP). Score and level are one
+   they're on the card. Every 1500 points is an extra heart (1UP); wrecks don't drop hearts, bosses do. Score and level are one
    count: level 2 at 100 points, each level after needs 10 more, every five levels a new sector.
    Every 10 levels a boss arrives after a WARNING (the Mothership, Dreadnought and Leviathan, then
    round again): almost the play area's height, wings reaching up and down, each its own shape
@@ -233,9 +233,10 @@
       maxShots: [7, 11, 15],               // most of your bullets on screen at once with 1, 2 and 3 guns
       spread: 0.12,                        // how wide the three-gun spread fans out
       invincible: 1.1,                     // blink time after a hit
-      heartDrop: 0.02, maxHearts: 5,       // chance a wreck drops a heart, most hearts you can hold
-      lifeEvery: 0,                        // an extra heart (1UP) every this many points (0: none)
-      heartEveryLevels: 10,                // a sure heart every this many levels, so it never depends on luck
+      heartDrop: 0, maxHearts: 5,          // chance a wreck drops a heart (0: hearts come from points and bosses), most you can hold
+      lifeEvery: 1500,                     // an extra heart (1UP) every this many points: steady, never luck (as often as
+                                           // random drops used to give them, about 1 in 1450 points)
+      heartEveryLevels: 0,                 // and one every this many levels (0: none)
       magnet: 22                           // how close loot is pulled in, in pixel-sizes
     };
     // Score and level progress are one number: every point fills the level bar. The first level
@@ -586,7 +587,7 @@
       var before = stageIndex();
       xp -= xpNeed(); level++; levelT = 1.6;
       burst(w / 2, h * 0.3, 36, RAINBOW, 220 * px / 3); sfx('level'); stats.sector = Math.max(stats.sector, stageIndex());
-      if (level % HARD.heartEveryLevels === 0 && S.hearts < HARD.maxHearts) { S.hearts++; pop(S.x, S.y - px * 12, '1UP', '#ff6b85'); sfx('life'); }  // a sure heart
+      if (HARD.heartEveryLevels && level % HARD.heartEveryLevels === 0 && S.hearts < HARD.maxHearts) { S.hearts++; pop(S.x, S.y - px * 12, '1UP', '#ff6b85'); sfx('life'); }  // a sure heart
       if (stageIndex() !== before) { enemies = []; shots = []; S.inv = Math.max(S.inv, 1.2); spawnT = 1.5; }  // a fresh sector
       if (level >= nextBoss && !boss && !bossWarn) { bossTier = Math.round(nextBoss / BOSS_EVERY); bossWarn = 2.5; alarmT = 0; enemies = []; shots = []; }  // here it comes
     }
