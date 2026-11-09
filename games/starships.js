@@ -18,7 +18,7 @@
    stretch of starfield between them, and stop getting busier after a few levels. Wrecks drop
    coins, gems, hearts, P chips (more guns: a second one kept until a hit, then a three-way spread
    for a few seconds; a hit costs one) and, rarely, a shield that takes one hit or wears off. Enemies can't be hit until
-   they're on the card. Every fifth level and every 5000 points is an extra heart (1UP). Score and level are one
+   they're on the card. Every tenth level is an extra heart (1UP). Score and level are one
    count: level 2 at 100 points, each level after needs 10 more, every five levels a new sector.
    Every 10 levels a boss arrives after a WARNING (the Mothership, Dreadnought and Leviathan, then
    round again): almost the play area's height, wings reaching up and down, each its own shape
@@ -234,8 +234,8 @@
       spread: 0.12,                        // how wide the three-gun spread fans out
       invincible: 1.1,                     // blink time after a hit
       heartDrop: 0.02, maxHearts: 5,       // chance a wreck drops a heart, most hearts you can hold
-      lifeEvery: 5000,                     // an extra heart (1UP) every this many points
-      heartEveryLevels: 5,                 // and one every this many levels, so they never depend on luck
+      lifeEvery: 0,                        // an extra heart (1UP) every this many points (0: none)
+      heartEveryLevels: 10,                // a sure heart every this many levels, so it never depends on luck
       magnet: 22                           // how close loot is pulled in, in pixel-sizes
     };
     // Score and level progress are one number: every point fills the level bar. The first level
@@ -592,7 +592,7 @@
     }
     function gain(points) {
       score += points; xp += points;
-      while (score >= nextLife) {  // every HARD.lifeEvery points: an extra heart
+      while (HARD.lifeEvery && score >= nextLife) {  // every HARD.lifeEvery points: an extra heart
         nextLife += HARD.lifeEvery;
         if (S.hearts < HARD.maxHearts) { S.hearts++; pop(S.x, S.y - px * 12, '1UP', '#ff6b85'); sfx('life'); }
       }
