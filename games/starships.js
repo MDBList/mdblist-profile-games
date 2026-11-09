@@ -19,7 +19,7 @@
    coins, gems, hearts, P chips (more guns: a second one kept until a hit, then a three-way spread
    for a few seconds; a hit costs one) and, rarely, a shield that takes one hit or wears off. Enemies can't be hit until
    they're on the card. Every 1000 points is an extra heart (1UP). Score and level are one
-   count: level 2 at 100 points, each level after needs 20 more, every five levels a new sector.
+   count: level 2 at 100 points, each level after needs 10 more, every five levels a new sector.
    Every 10 levels a boss arrives after a WARNING (the Mothership, Dreadnought and Leviathan, then
    round again): almost the play area's height, wings reaching up and down, each its own shape
    with its own move (swoops, lunges, a weave). Shots glance off its armour. Its core, at the
@@ -209,7 +209,7 @@
     // Difficulty, all in one place (the first, easier numbers in brackets).
     var HARD = {
       paceStep: 0.07, paceMax: 1.6,        // game speed-up per level, and its cap (reached about level 10): a long game settles into a groove
-      bossPace: [1.35, 0.05, 1.6],         // a boss fight's own speed: first boss, more per boss after, most (not the level's)
+      bossPace: [1.5, 0.05, 1.75],         // a boss fight's own speed: first boss, more per boss after, most (not the level's)
       rampTo: 8,                           // regular enemies stop getting busier after this level; bosses bring the challenge after that
       firstSpawn: 1.0,                     // seconds before the first enemies
       spawnGap: [1.4, 2.4], spawnFaster: 0.09, spawnMin: 0.9,  // gap between spawns (spawnFaster less per level, never under spawnMin)
@@ -218,24 +218,26 @@
       droneSpeed: 26, rockSpeed: [14, 24], // px per pixel-size per second
       // One new thing at a time: the level each enemy starts at.
       rocksFrom: 2,
+      droneHpFrom: 8,                      // saucers take two hits from this level (one before)
       gunsFrom: 3, gunHp: 6, gunFire: [1.8, 0.05, 0.9], gunShot: 46,  // gunships: hits, fire gap (start, less per level, min) and shot speed
       dartsFrom: 5, dartChance: 0.12,      // darts: share of spawns
       dronesShootFrom: 6, droneShots: 0.14,// saucers shoot back, shots per second each
       fireGap: 0.24,                       // seconds between volleys: the guns fire by themselves
       powerTime: [0, 0, 0, 5],             // seconds at each number of guns (0: kept until a hit): the three-way spread is a short burst
       shieldTime: 12,                      // seconds a shield lasts if nothing hits it
-      chipChance: 0.3,                     // chance a wave bonus or a gunship drops a P chip (else a gem)
+      bonusDrop: 0.6, chipChance: 0.25,    // chance a whole wave or a gunship drops something, and that it's a P chip (else a gem)
+      lootDrop: 0.2, powerDrop: 0.01,      // chance any other wreck drops a coin or gem, or a P chip
       maxShots: [7, 11, 15],               // most of your bullets on screen at once with 1, 2 and 3 guns
       spread: 0.12,                        // how wide the three-gun spread fans out
-      invincible: 1.4,                     // blink time after a hit
-      heartDrop: 0.05, maxHearts: 5,       // chance a wreck drops a heart, most hearts you can hold
-      lifeEvery: 1000,                     // an extra heart (1UP) every this many points
+      invincible: 1.1,                     // blink time after a hit
+      heartDrop: 0.03, maxHearts: 5,       // chance a wreck drops a heart, most hearts you can hold
+      lifeEvery: 1500,                     // an extra heart (1UP) every this many points
       magnet: 22                           // how close loot is pulled in, in pixel-sizes
     };
     // Score and level progress are one number: every point fills the level bar. The first level
-    // is LEVEL_POINTS points and each one after needs LEVEL_STEP more (100, 120, 140...), so the
+    // is LEVEL_POINTS points and each one after needs LEVEL_STEP more (100, 110, 120...), so the
     // busier later levels don't rush by.
-    var LEVEL_POINTS = 100, LEVEL_STEP = 20;
+    var LEVEL_POINTS = 100, LEVEL_STEP = 10;
     function ramp() { return Math.min(level, HARD.rampTo); }  // the level that enemy numbers go by
     function xpNeed() { return LEVEL_POINTS + LEVEL_STEP * (level - 1); }
 
@@ -365,7 +367,7 @@
     var WAVE_BONUS = 30;
     // Bosses: one every BOSS_EVERY levels. Each tier (level / 10) is bigger, tougher and worth
     // more: BOSS_HP hits plus BOSS_HP_STEP per tier, BOSS_POINTS times the tier.
-    var BOSS_EVERY = 10, BOSS_HP = 50, BOSS_HP_STEP = 10, BOSS_POINTS = 400;
+    var BOSS_EVERY = 10, BOSS_HP = 70, BOSS_HP_STEP = 15, BOSS_POINTS = 400;
     var TURRET_HP = 8, TURRET_HP_STEP = 3, TURRET_POINTS = 60;  // each turret's hits (plus a step per tier) and its points
     var TURRET_DAMAGE = 0.15;  // share of the boss's health a destroyed turret takes with it
     // Its close-range defence: stay within ZAP_ZONE (share of the card's width) of its nose for
@@ -597,16 +599,16 @@
       if (big) shake = Math.max(shake, 0.15);
       if (e.kind === 'rock') { addRock(false, e.x, e.y, e.vx * 1.2, -px * 14); addRock(false, e.x, e.y, e.vx * 1.2, px * 14); }
       var wv = e.wave && waves[e.wave];
-      if (wv && ++wv.killed === wv.n) {  // the whole wave: a bonus, and something good
+      if (wv && ++wv.killed === wv.n) {  // the whole wave: a bonus, and often something good
         gain(WAVE_BONUS); tally.waves++; pop(e.x, e.y - px * 12, 'WAVE BONUS +' + WAVE_BONUS, '#6ee05a'); sfx('wave');
-        dropLoot(S.power < 3 && Math.random() < HARD.chipChance ? 'power' : 'gem', e.x, e.y);
-      } else if (e.kind === 'gun') dropLoot(S.power < 3 && Math.random() < HARD.chipChance ? 'power' : 'gem', e.x, e.y);
-      else {
-        var r = Math.random();
-        if (r < HARD.heartDrop && S.hearts < HARD.maxHearts) dropLoot('heart', e.x, e.y);
-        else if (r < HARD.heartDrop + 0.02 && S.power < 3) dropLoot('power', e.x, e.y);
-        else if (r < HARD.heartDrop + 0.02 + SHIELD_DROP && !S.shield) dropLoot('shield', e.x, e.y);
-        else if (r < 0.35) dropLoot(Math.random() < 0.8 ? 'coin' : 'gem', e.x, e.y);
+        if (Math.random() < HARD.bonusDrop) dropLoot(S.power < 3 && Math.random() < HARD.chipChance ? 'power' : 'gem', e.x, e.y);
+      } else if (e.kind === 'gun') { if (Math.random() < HARD.bonusDrop) dropLoot(S.power < 3 && Math.random() < HARD.chipChance ? 'power' : 'gem', e.x, e.y); }
+      else {  // anything else: now and then a heart, a P chip, a shield, or a coin or gem
+        var r = Math.random(), heart = HARD.heartDrop, chip = heart + HARD.powerDrop, shield = chip + SHIELD_DROP;
+        if (r < heart && S.hearts < HARD.maxHearts) dropLoot('heart', e.x, e.y);
+        else if (r < chip && S.power < 3) dropLoot('power', e.x, e.y);
+        else if (r < shield && !S.shield) dropLoot('shield', e.x, e.y);
+        else if (r < shield + HARD.lootDrop) dropLoot(Math.random() < 0.8 ? 'coin' : 'gem', e.x, e.y);
       }
     }
     function hurt(fromX, fromY) {
@@ -634,7 +636,7 @@
       var n = Math.min(5, 3 + Math.floor(ramp() / 3)), id = ++waveId, room = (BOTTOM - TOP) / 2;
       var amp = Math.max(0, Math.min(px * rnd(6, 14), room - px * 6)), y0 = rnd(TOP + amp + px * 4, BOTTOM - amp - px * 4);
       waves[id] = { n: n, killed: 0 };
-      for (var k = 0; k < n; k++) enemies.push({ kind: 'drone', x: w + px * 8 + k * px * 13, y: y0, y0: y0, amp: amp, ph: k * 0.7, vx: -HARD.droneSpeed * px, hp: 1, r: px * 4, t: 0, wave: id });
+      for (var k = 0; k < n; k++) enemies.push({ kind: 'drone', x: w + px * 8 + k * px * 13, y: y0, y0: y0, amp: amp, ph: k * 0.7, vx: -HARD.droneSpeed * px, hp: level >= HARD.droneHpFrom ? 2 : 1, r: px * 4, t: 0, wave: id });
     }
     function addGunship() {
       enemies.push({ kind: 'gun', x: w + px * 8, y: rnd(TOP + px * 8, BOTTOM - px * 8), vx: -20 * px, vy: rnd(-1, 1) * 6 * px, hold: w * rnd(0.68, 0.85), hp: HARD.gunHp, r: px * 5, fireT: 1, life: 8, t: 0 });
@@ -850,7 +852,7 @@
       }
       if (b.charge > 0 && (b.charge -= wdt) <= 0) {
         var at = b.pending;
-        b.openT = Math.max(1.4, 2 - 0.1 * tr);  // the core stays open a moment: your chance
+        b.openT = Math.max(1.2, 1.7 - 0.1 * tr);  // the core stays open a moment: your chance
         if (at === 0) { b.volley = Math.min(5, 3 + tr); b.volleyT = 0; }                      // aimed bursts from the turrets
         else if (at === 1) {                                                                   // walls with a gap, starting away from you
           var g0 = Math.max(px * 16, px * (24 - 2 * tr));
