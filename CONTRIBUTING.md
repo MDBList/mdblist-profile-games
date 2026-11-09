@@ -35,7 +35,8 @@ A game is one JavaScript file in `games/`. It registers a factory with the runti
 })();
 ```
 
-Then add `<script src="games/my-game.js"></script>` to `index.html`.
+Then add it to the `GAMES` list in `index.html` (`{ file: 'my-game.js', name: 'My Game' }`) and pick
+it from the Game menu. The playground loads only the game you pick.
 
 - **Resizing.** `resumed` is `true` when the runtime rebuilds your game after the card was
   resized. Pick up where you were instead of replaying the intro.

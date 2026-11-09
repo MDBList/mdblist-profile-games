@@ -124,13 +124,18 @@
   <a href="CONTRIBUTING.md">CONTRIBUTING.md</a>.</p>
 
 <script src="runtime.js"></script>
-<!-- Games: one file each. Add yours here. -->
-<script src="games/player-one.js"></script>
 <script>
 (function () {
   var FX = window.MDBCosmetics, card = document.getElementById('card'), stage = document.getElementById('stage');
   var select = document.getElementById('game'), fx = null;
-  var NAMES = { arcade: 'Player One' };
+  // Games: one file each in games/. Add yours here. Only the picked one is loaded; picking
+  // another reloads the page with ?game=<file>, so a refresh keeps it.
+  var GAMES = [
+    { file: 'player-one.js', name: 'Player One' },
+    { file: 'starships.js', name: 'Starships' }
+  ];
+  var wanted = new URLSearchParams(location.search).get('game');
+  var game = GAMES.filter(function (g) { return g.file === wanted; })[0] || GAMES[0];
 
   // Layout hints, worked out the way mdblist.com does for its profile card: the demo walks on the
   // stats row's top line, or on the tab strip when the stats sit beside the details; the bottom
@@ -150,37 +155,51 @@
 
   function mount() {
     if (fx) { fx.destroy(); fx = null; }
-    card.setAttribute('data-cos-effect', select.value);
-    fx = FX.mountEffect(card, select.value, { scene: scene, force: true });
+    var key = FX.effects[FX.effects.length - 1];  // the one game loaded
+    if (!key) return;
+    card.setAttribute('data-cos-effect', key);
+    fx = FX.mountEffect(card, key, { scene: scene, force: true });
   }
 
-  FX.effects.forEach(function (key) {
-    var o = document.createElement('option'); o.value = key; o.textContent = NAMES[key] || key; select.appendChild(o);
+  GAMES.forEach(function (g) {
+    var o = document.createElement('option'); o.value = g.file; o.textContent = g.name; o.selected = g === game; select.appendChild(o);
   });
-  select.addEventListener('change', mount);
+  select.addEventListener('change', function () {
+    var q = new URLSearchParams(location.search); q.set('game', select.value); location.search = q.toString();
+  });
+  var script = document.createElement('script');
+  script.src = 'games/' + game.file;
+  script.onload = mount;
+  document.body.appendChild(script);
 
-  function pick(group, attr, apply) {
+  // The settings live in the URL too, so picking another game (a reload) keeps them.
+  function remember(name, value) {
+    var q = new URLSearchParams(location.search); q.set(name, value); history.replaceState(null, '', '?' + q.toString());
+  }
+  function pick(group, attr, name, apply) {
     group.addEventListener('click', function (e) {
       var b = e.target.closest('button'); if (!b) return;
       group.querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
-      apply(b.getAttribute(attr));
+      apply(b.getAttribute(attr)); remember(name, b.getAttribute(attr));
     });
+    var saved = new URLSearchParams(location.search).get(name);
+    group.querySelectorAll('button').forEach(function (x) { if (x.getAttribute(attr) === saved) x.click(); });
   }
-  pick(document.getElementById('size'), 'data-w', function (w) {
+  pick(document.getElementById('size'), 'data-w', 'size', function (w) {
     stage.style.maxWidth = w + 'px';
     stage.classList.toggle('narrow', +w < 600);
     stage.classList.toggle('wide', +w >= 1100);
   });
-  pick(document.getElementById('theme'), 'data-theme', function (t) {
+  pick(document.getElementById('theme'), 'data-theme', 'theme', function (t) {
     document.documentElement.classList.toggle('dark', t === 'dark');  // games read html.dark each frame
   });
-  document.getElementById('content').addEventListener('change', function () {
-    card.classList.toggle('no-content', !this.checked); mount();
+  var content = document.getElementById('content');
+  content.addEventListener('change', function () {
+    card.classList.toggle('no-content', !this.checked); remember('content', this.checked ? 1 : 0); mount();
   });
+  if (new URLSearchParams(location.search).get('content') === '0') { content.checked = false; card.classList.add('no-content'); }
   document.getElementById('restart').addEventListener('click', mount);
   card.addEventListener('click', function (e) { if (e.target.closest('a')) e.preventDefault(); });
-
-  mount();
 })();
 </script>
 </body>
