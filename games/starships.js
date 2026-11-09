@@ -396,6 +396,24 @@
     var paused = false, newBest = false, nextLife = HARD.lifeEvery;
     // What a game was made of, for the GAME OVER screen.
     var stats = { kills: 0, bosses: 0, sector: 0 };
+    // Scores beyond this browser are optional, as in Player One: a site can plug in
+    // MDBCosmetics.arcadeScores (.start(cardEl, 'starships') -> a session or null), and at GAME
+    // OVER gets the score and what it's made of (so it can check it adds up): wrecks by kind,
+    // whole saucer waves, pickups by kind, turrets and bosses. Points: drone 8, rock 12, pebble
+    // 6, gun 28, wave 30, coin 12, gem 36, heart / power / shield 24, turret 60, boss 400 x tier.
+    var tally = null, session = null;
+    function beginScoring() {
+      tally = { drones: 0, rocks: 0, pebbles: 0, guns: 0, waves: 0, coins: 0, gems: 0, hearts: 0, powers: 0, shields: 0, turrets: 0, bosses: 0 };
+      var hooks = FX.arcadeScores;
+      session = hooks && hooks.start ? hooks.start(host, 'starships') : null;
+    }
+    function finishScoring() {
+      if (!session) return;
+      var result = { score: score, level: level, duration: playT.toFixed(2) };
+      Object.keys(tally).forEach(function (k) { result[k] = tally[k]; });
+      session.finish(result);
+    }
+    function savedBest() { var b = session && session.best(); return b == null ? null : b; }
     function bossKind(tier) { return BOSS_KINDS[(tier - 1) % BOSS_KINDS.length]; }
     // The demo's own little show: a target (a rock or a saucer) every few seconds, the coin it
     // leaves, and the ship's barrel rolls (S.roll counts down one) and speed bursts (S.boost).
@@ -528,6 +546,7 @@
       bullets = []; shots = []; enemies = []; loot = []; sparks = []; pops = []; waves = {}; boss = null; bossWarn = 0; nextBoss = BOSS_EVERY; bossBannerT = 0; demoFoes = []; demoCoins = []; demoComet = null; S.roll = S.boost = 0;
       S.powerT = 0; S.shield = false; S.shieldT = 0; paused = false; newBest = false; nextLife = HARD.lifeEvery; spawns = 0;
       stats = { kills: 0, bosses: 0, sector: 0 };
+      beginScoring();
       SHIPS.keys = {}; SHIPS.pointer = null; SHIPS.down = {};
       setPlaying(true); sfxInit(); sfx('go');
     }
@@ -571,7 +590,7 @@
     }
     function dropLoot(kind, x, y) { loot.push({ kind: kind, x: x, y: Math.max(TOP, Math.min(BOTTOM, y)), t: rnd(0, TAU) }); }
     function kill(e) {
-      stats.kills++;
+      stats.kills++; tally[e.kind + 's']++;
       var pt = POINTS[e.kind], big = e.kind === 'rock' || e.kind === 'gun';
       gain(pt); pop(e.x, e.y - px * 6, '+' + pt, '#ffe14d');
       burst(e.x, e.y, big ? 26 : 14, WRECK[e.kind], (big ? 200 : 140) * px / 3); sfx(big ? 'bigboom' : 'boom');
@@ -579,7 +598,7 @@
       if (e.kind === 'rock') { addRock(false, e.x, e.y, e.vx * 1.2, -px * 14); addRock(false, e.x, e.y, e.vx * 1.2, px * 14); }
       var wv = e.wave && waves[e.wave];
       if (wv && ++wv.killed === wv.n) {  // the whole wave: a bonus, and something good
-        gain(WAVE_BONUS); pop(e.x, e.y - px * 12, 'WAVE BONUS +' + WAVE_BONUS, '#6ee05a'); sfx('wave');
+        gain(WAVE_BONUS); tally.waves++; pop(e.x, e.y - px * 12, 'WAVE BONUS +' + WAVE_BONUS, '#6ee05a'); sfx('wave');
         dropLoot(S.power < 3 && Math.random() < HARD.chipChance ? 'power' : 'gem', e.x, e.y);
       } else if (e.kind === 'gun') dropLoot(S.power < 3 && Math.random() < HARD.chipChance ? 'power' : 'gem', e.x, e.y);
       else {
@@ -600,9 +619,11 @@
       S.vx = (S.x < fromX ? -1 : 1) * SPEED * 1.2; S.vy = (S.y < fromY ? -1 : 1) * SPEED * 0.6;
       pop(S.x, S.y - px * 8, '-1', '#ff3b5c'); burst(S.x, S.y, 14, ['#ff3b5c', '#ffffff', '#4f7cff'], 150 * px / 3);
       if (S.hearts > 0) { sfx('hurt'); return; }
+      if (savedBest() != null) hi = savedBest();  // on a site that keeps scores, its best is the one to beat
       mode = 'over'; overT = 0; enemies = []; shots = []; bullets = []; loot = []; boss = null; bossWarn = 0; newBest = score > hi;
       burst(S.x, S.y, 40, ['#ff6a1f', '#ffd23f', '#ffffff', '#4f7cff'], 260 * px / 3); sfx('bigboom'); sfx('over'); sfxSleep(1500);
       if (score > hi) { hi = score; try { window.localStorage.setItem('mdb-starships-best', String(hi)); } catch (e) { /* storage blocked */ } }
+      finishScoring();
     }
 
     // Spawning: saucer waves, then rocks, gunships and darts as each one's level comes up.
@@ -699,7 +720,7 @@
         t.flash = 0.06;
         if (--t.hp > 0) { hitSound('hit'); return true; }
         burst(tp.x, tp.y, 22, ['#ff6a1f', '#ffd23f', '#ffffff', b.kind.pal.K], 180 * px / 3); sfx('bigboom'); shake = Math.max(shake, 0.2);
-        gain(TURRET_POINTS); pop(tp.x, tp.y - px * 6, 'TURRET +' + TURRET_POINTS, '#ffe14d'); dropLoot('power', tp.x, tp.y);
+        gain(TURRET_POINTS); tally.turrets++; pop(tp.x, tp.y - px * 6, 'TURRET +' + TURRET_POINTS, '#ffe14d'); dropLoot('power', tp.x, tp.y);
         b.hp = Math.max(0, b.hp - Math.ceil(b.maxHp * TURRET_DAMAGE)); b.flash = 0.12;  // losing a turret hurts the boss too
         if (b.hp <= 0) { b.state = 'dying'; b.dieT = 1.6; shots = []; }
         return true;
@@ -740,7 +761,7 @@
           gain(pts); pop(b.x, b.y - b.H / 2 - px * 4, 'BOSS +' + pts, '#ffe14d');
           dropLoot('heart', b.x - px * 8, b.y - px * 8); dropLoot('power', b.x - px * 8, b.y + px * 8);
           for (var g = 0; g < 3 + tr; g++) dropLoot('gem', b.x + rnd(-px * 10, px * 10), b.y + rnd(-px * 12, px * 12));
-          stats.bosses++;
+          stats.bosses++; tally.bosses++;
           bossBannerT = 2.5; bossTier = b.tier; boss = null; nextBoss += BOSS_EVERY; spawnT = 3; gain(0);  // any level-ups earned during the fight
         }
         return;
@@ -1074,7 +1095,7 @@
             if (l.kind === 'shield') { S.shield = true; S.shieldT = HARD.shieldTime; }
             pop(l.x, l.y - px * 8, l.kind === 'power' && S.power === 3 ? 'MAX POWER' : sp.label, sp.c);
             burst(l.x, l.y, 10, [sp.pal[Object.keys(sp.pal)[0]], '#ffffff'], 110 * px / 3);
-            sfx(l.kind); gain(sp.pts);
+            sfx(l.kind); gain(sp.pts); tally[l.kind + 's']++;
             return false;
           }
           return l.x > -px * 10;
@@ -1200,6 +1221,7 @@
           if (!(low && Math.floor(frameT * 6) % 2)) { front.fillStyle = low ? '#ff9a1f' : '#6ee05a'; front.fillRect(px * 3, px * 15, px * 21 * left, px); }
         }
         pixelText(front, 'SCORE ' + score, w - px * 4, px * 6, px * 0.65, '#ffffff', '#15151a', 1, 'right');
+        if (savedBest() != null && savedBest() > hi) hi = savedBest();
         if (!boss) pixelText(front, 'HI ' + Math.max(hi, score), w / 2, px * 6, px * 0.55, '#ffe14d', '#15151a');
         var pb = pauseBox();  // the pause button: two bars, or a play arrow while paused
         front.fillStyle = 'rgba(10,10,20,.55)'; front.fillRect(pb.x0, pb.y0, pb.x1 - pb.x0, pb.y1 - pb.y0);
@@ -1249,7 +1271,9 @@
         var oa = clamp(overT * 3);
         pixelText(front, 'GAME OVER', w / 2, h * 0.2, px * 1.5, '#ff3b5c', '#15151a', oa);
         pixelText(front, 'SCORE ' + score + (newBest ? '   NEW BEST!' : '   BEST ' + Math.max(hi, score)), w / 2, h * 0.36, px * 0.8, newBest ? '#6ee05a' : '#ffffff', '#15151a', oa);
-        pixelText(front, 'DESTROYED ' + stats.kills + '   BOSSES ' + stats.bosses + '   REACHED ' + STAGES[stats.sector].name, w / 2, h * 0.55, px * 0.55, '#ffffff', '#15151a', oa);
+        pixelText(front, 'DESTROYED ' + stats.kills + '   BOSSES ' + stats.bosses + '   REACHED ' + STAGES[stats.sector].name, w / 2, h * 0.52, px * 0.55, '#ffffff', '#15151a', oa);
+        var line = session && session.line();  // the site's word on the save: SAVING..., a rank, NEW BEST
+        if (line) pixelText(front, line, w / 2, h * 0.64, px * 0.6, session.good() ? '#6ee05a' : '#ffe14d', '#15151a', oa);
         if (overT > 1.2 && Math.floor(overT * 1.6) % 2) pixelText(front, 'P / TAP TO RETRY', w / 2, h * 0.78, px * 0.7, '#ffe14d', '#15151a');
       }
       // Intro: dark pixel blocks break away behind STARSHIPS ... LAUNCH!
