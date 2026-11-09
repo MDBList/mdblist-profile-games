@@ -27,7 +27,8 @@
    first, the core flashing white). The two turrets on its wing tips can be shot off: that stops
    their aimed bursts and takes 15% of its health with each. Its attacks keep you moving, and
    each tier knows one more: aimed bursts and walls of shots with a moving gap, then a sweeping
-   stream, then weaving shots, then a spiral. Its nose stops you, and hang about in front of it and
+   stream, then weaving shots, then a spiral, aimed at you; with its turrets gone, its core fires
+   their bursts. Stay in line with its core and it fires a beam down that row. Its nose stops you, and hang about in front of it and
    it crackles, then lashes that space (lightning, flame or a roar). It smokes when hurt and burns
    when nearly down.
    Three hearts.
@@ -135,6 +136,8 @@
     powerdown: function () { notes('square', [784, 587, 440], 0.06, 0.1, 0.16); },
     pause: function () { tone('square', 660, 660, 0.06, 0.12); tone('square', 440, 440, 0.08, 0.12, 0.07); },
     charge: function () { tone('sawtooth', 220, 880, 0.55, 0.06); },
+    beamup: function () { tone('sawtooth', 160, 640, 0.8, 0.07); tone('square', 320, 1280, 0.8, 0.03); },
+    beam: function () { tone('sawtooth', 420, 90, 0.6, 0.14); hiss(0.6, 0.35, 6000, 600); },
     crackle: function () { hiss(0.7, 0.14, 7000, 2500); tone('sawtooth', 110, 260, 0.7, 0.05); },
     lash: function () { hiss(0.35, 0.5, 9000, 500); tone('square', 1800, 180, 0.3, 0.12); },
     shield: function () { notes('triangle', [784, 1175, 1568, 2349], 0.05, 0.14, 0.3); },
@@ -374,6 +377,10 @@
     // ZAP_WAIT seconds and it charges for ZAP_CHARGE (core open: a greedy moment), then lashes
     // the zone for ZAP_TIME; then it rests ZAP_REST. Lightning, flame or a roar, by kind.
     var ZAP_ZONE = 0.13, ZAP_WAIT = 0.8, ZAP_CHARGE = 1.1, ZAP_TIME = 0.35, ZAP_REST = 3;
+    // Its beam: stay in line with its core for BEAM_WAIT seconds and it charges for BEAM_CHARGE (a
+    // thin line shows the row; the core is open: a greedy moment), then fires a beam along that
+    // row for BEAM_TIME; then it rests BEAM_REST. Sitting in front of the weak point isn't safe.
+    var BEAM_WAIT = 1.5, BEAM_CHARGE = 0.8, BEAM_TIME = 0.6, BEAM_REST = 3.5;
     var SHIELD_DROP = 0.012;  // chance a wreck drops a shield (it takes one hit for you)
 
     // Sectors: a new sky every five levels.
@@ -692,7 +699,7 @@
       var hp = BOSS_HP + BOSS_HP_STEP * tr, thp = TURRET_HP + TURRET_HP_STEP * tr;
       var b = { kind: kind, tier: tier, tr: tr, scale: 1, W: m.cols * px, H: m.rows * px, hp: hp, maxHp: hp,
         x: w + m.cols * px, y: mid, t: 0, state: 'enter', fireT: 1.2, last: -1, charge: 0, pending: 0, volley: 0, volleyT: 0, spiral: 0, spiralA: 0, spiralT: 0, walls: 0, wallT: 0, gapY: 0, stream: 0, streamT: 0, flash: 0, dieT: 0,
-        open: 0, openT: 0, near: 0, zapC: 0, zapT: 0, zapCd: 0, ty: mid, moveT: 3, lungeT: 6, lunge: 0, lx: 0,
+        open: 0, openT: 0, near: 0, zapC: 0, zapT: 0, zapCd: 0, lined: 0, beamC: 0, beamT: 0, beamCd: 0, ty: mid, moveT: 3, lungeT: 6, lunge: 0, lx: 0,
         turrets: m.spots.map(function (c) { return { cx: c[0], cy: c[1], hp: thp, flash: 0 }; }) };
       for (var key in m) if (key !== 'spots') b[key] = m[key];
       return b;
@@ -787,6 +794,15 @@
         }
       }
       b.x = hold - b.lx;
+      // Too long in line with its core: it charges (a thin line along the row), then fires its beam down it.
+      var bc = coreAt(b), beamHalf = b.core.h * px / 2 + px * 2, inLine = Math.abs(S.y - bc.y) < beamHalf + px * 2;
+      if (b.beamCd > 0) b.beamCd -= wdt;
+      if (b.beamT > 0) { b.beamT -= wdt; if (Math.abs(S.y - bc.y) < beamHalf + px * 2.5 && S.x < bc.x) hurt(S.x + px * 10, bc.y); if (b.beamT <= 0) b.beamCd = BEAM_REST; }
+      else if (b.beamC > 0) { if ((b.beamC -= wdt) <= 0) { b.beamT = BEAM_TIME; sfx('beam'); shake = Math.max(shake, 0.1); } }
+      else {
+        b.lined = inLine ? b.lined + wdt : 0;
+        if (b.lined > BEAM_WAIT && b.beamCd <= 0 && b.zapC <= 0 && b.zapT <= 0) { b.beamC = BEAM_CHARGE; b.lined = 0; sfx('beamup'); }
+      }
       // Too close for too long: it charges (crackling, the zone hazed) and lashes the zone in front of it.
       var nose = b.x - b.W / 2, inZone = S.x > nose - w * ZAP_ZONE;
       if (b.zapCd > 0) b.zapCd -= wdt;
@@ -800,7 +816,7 @@
       }
       // The core's hatch: open while an attack (or its close-range lash) charges and for a moment after it fires.
       b.openT -= wdt;
-      b.open += ((b.charge > 0 || b.openT > 0 || b.zapC > 0 ? 1 : 0) - b.open) * Math.min(1, dt * 8);
+      b.open += ((b.charge > 0 || b.openT > 0 || b.zapC > 0 || b.beamC > 0 ? 1 : 0) - b.open) * Math.min(1, dt * 8);
       // Hurt: smoke from the hull below half health, fire below a quarter.
       if (angry && Math.random() < dt * (b.hp < b.maxHp / 4 ? 14 : 6)) {
         var sp = bossAt(b, rnd(0.25, 0.85) * b.cols, rnd(0.38, 0.62) * b.rows), fire = b.hp < b.maxHp / 4 && Math.random() < 0.5;
@@ -810,7 +826,9 @@
         b.volleyT -= wdt;
         if (b.volleyT <= 0) {
           b.volley--; b.volleyT = 0.22;
-          turretsUp(b).forEach(function (t) { bossShots(b, (angry ? 3 : 2) + Math.floor(tr / 2), 0.25 + 0.05 * tr, true, 50 + 5 * tr, bossAt(b, t.cx - b.tW / 2, t.cy)); });
+          var guns = turretsUp(b), per = (angry ? 3 : 2) + Math.floor(tr / 2);
+          if (guns.length) guns.forEach(function (t) { bossShots(b, per, 0.25 + 0.05 * tr, true, 50 + 5 * tr, bossAt(b, t.cx - b.tW / 2, t.cy)); });
+          else bossShots(b, per + 1, 0.3 + 0.05 * tr, true, 50 + 5 * tr);  // no turrets left: the core fires them itself
         }
       }
       if (b.spiral > 0) {  // a stream of shots, turning as it goes
@@ -835,7 +853,7 @@
       if (b.stream > 0) {  // a stream of shots that sweeps up and down: a snake to slip through
         b.stream -= wdt; b.streamT -= wdt;
         if (b.streamT <= 0) {
-          var so = coreAt(b), sa = Math.PI + Math.sin(b.stream * (3 + 0.3 * tr)) * 0.6;
+          var so = coreAt(b), sa = Math.atan2(S.y - so.y, S.x - so.x) + Math.sin(b.stream * (3 + 0.3 * tr)) * 0.6;  // sweeping across you
           b.streamT = angry ? 0.06 : 0.08;
           shots.push({ x: so.x, y: so.y, vx: Math.cos(sa) * 40 * px, vy: Math.sin(sa) * 40 * px });
           if (Math.random() < 0.3) sfx('zap');
@@ -845,7 +863,7 @@
       var busy = b.volley > 0 || b.walls > 0 || b.stream > 0 || b.spiral > 0;  // one attack at a time
       if (b.fireT <= 0 && b.lunge <= 0 && !busy) {  // pick the next attack and charge it up: the core opens and flashes, so you see it coming
         b.fireT = Math.max(1.8, (angry ? 2.6 : 3.4) - 0.15 * tr);
-        var pool = [0, 1, 2, 4, 3].slice(0, Math.min(5, b.tier + 1)).filter(function (p) { return p !== 0 || turretsUp(b).length; });  // no turrets, no aimed bursts
+        var pool = [0, 1, 2, 4, 3].slice(0, Math.min(5, b.tier + 1));
         if (pool.length > 1) pool = pool.filter(function (p) { return p !== b.last; });  // never the same twice in a row
         var pat = pool[Math.floor(Math.random() * pool.length)];
         b.last = pat; b.pending = pat; b.charge = 0.6; sfx('charge');
@@ -860,9 +878,9 @@
           b.walls = angry ? 4 : 3; b.wallT = 0;
         } else if (at === 2) { b.stream = 2.4; b.streamT = 0; }                               // a sweeping stream
         else if (at === 4) {                                                                   // a fan of shots that weave as they fly
-          var wo = coreAt(b), wn = (angry ? 7 : 5) + tr;
+          var wo = coreAt(b), wn = (angry ? 7 : 5) + 2 * Math.floor(tr / 2), wAim = Math.atan2(S.y - wo.y, S.x - wo.x);  // odd: one comes straight at you
           for (var k = 0; k < wn; k++) {
-            var wa = Math.PI + (k / (wn - 1) - 0.5) * 1.1;
+            var wa = wAim + (k / (wn - 1) - 0.5) * 1.1;
             shots.push({ x: wo.x, y: wo.y, by: wo.y, vx: Math.cos(wa) * (32 + 3 * tr) * px, vy: Math.sin(wa) * (32 + 3 * tr) * px, amp: px * 6, f: 5, ph: k, t: 0 });
           }
           sfx('zap');
@@ -1147,6 +1165,15 @@
         if (shut > 0) {
           back.fillStyle = bk.pal.K; back.fillRect(Math.round(c0.x), Math.round(c0.y), cw, shut); back.fillRect(Math.round(c0.x), Math.round(c0.y) + chh - shut, cw, shut);
           back.fillStyle = bk.pal.R; back.fillRect(Math.round(c0.x), Math.round(c0.y) + shut - 1, cw, 1); back.fillRect(Math.round(c0.x), Math.round(c0.y) + chh - shut, cw, 1);
+        }
+        var bcp = coreAt(boss), bhalf = boss.core.h * px / 2 + px * 2;
+        if (boss.beamC > 0 && (CALM || Math.floor(frameT * 12) % 2)) { back.fillStyle = 'rgba(' + bk.glow + ',.7)'; back.fillRect(0, Math.round(bcp.y), Math.round(bcp.x), px); }  // the row it will fire down
+        if (boss.beamT > 0) {  // the beam: a glow around a white-hot middle, along the core's row
+          var bk2 = boss.beamT / BEAM_TIME;
+          back.save(); back.globalAlpha = Math.min(1, bk2 * 2.5);
+          back.fillStyle = 'rgba(' + bk.glow + ',.55)'; back.fillRect(0, Math.round(bcp.y - bhalf), Math.round(bcp.x), Math.round(bhalf * 2));
+          back.fillStyle = '#ffffff'; back.fillRect(0, Math.round(bcp.y - bhalf * 0.4), Math.round(bcp.x), Math.round(bhalf * 0.8));
+          back.restore();
         }
         var zx = boss.x - boss.W / 2, zw = w * ZAP_ZONE;
         if (boss.zapC > 0) { back.fillStyle = 'rgba(' + bk.glow + ',' + (CALM ? 0.12 : 0.08 + 0.06 * Math.sin(frameT * 30)) + ')'; back.fillRect(zx - zw, TOP, zw, BOTTOM - TOP); }  // where it will hit
