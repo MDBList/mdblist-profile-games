@@ -18,7 +18,7 @@
    stretch of starfield between them, and stop getting busier after a few levels. Wrecks drop
    coins, gems, hearts, P chips (more guns: a second one kept until a hit, then a three-way spread
    for a few seconds; a hit costs one) and, rarely, a shield that takes one hit or wears off. Enemies can't be hit until
-   they're on the card. Every 1500 points is an extra heart (1UP); wrecks don't drop hearts, bosses do. Score and level are one
+   they're on the card. Every 750 points is an extra heart (1UP); wrecks don't drop hearts, bosses do. Score and level are one
    count: level 2 at 100 points, each level after needs 10 more, every five levels a new sector.
    Every 10 levels a boss arrives after a WARNING (the Mothership, Dreadnought and Leviathan, then
    round again): almost the play area's height, wings reaching up and down, each its own shape
@@ -234,8 +234,8 @@
       spread: 0.12,                        // how wide the three-gun spread fans out
       invincible: 1.1,                     // blink time after a hit
       heartDrop: 0, maxHearts: 5,          // chance a wreck drops a heart (0: hearts come from points and bosses), most you can hold
-      lifeEvery: 1500,                     // an extra heart (1UP) every this many points: steady, never luck (as often as
-                                           // random drops used to give them, about 1 in 1450 points)
+      lifeEvery: 750,                      // an extra heart (1UP) every this many points: steady, never luck (about as often
+                                           // as random drops and the old 1500-point 1UP gave them together)
       heartEveryLevels: 0,                 // and one every this many levels (0: none)
       magnet: 22                           // how close loot is pulled in, in pixel-sizes
     };
