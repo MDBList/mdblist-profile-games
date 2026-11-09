@@ -134,6 +134,7 @@
       if (!e.repeat && (k === ' ' || k === 'ArrowUp' || k === 'w' || k === 'W')) g.jump();
     });
     document.addEventListener('keyup', function (e) {
+      if (!e.key) return;  // autofill and the like send keyups with no key
       ARCADE.keys[e.key.toLowerCase()] = false;
       var g = arcadeLive();
       if (g && /^( |ArrowUp|w|W)$/.test(e.key)) g.releaseJump();
@@ -318,10 +319,11 @@
     var blocks = [], cs = px * 8;
     for (var by = 0; by < h; by += cs) for (var bx = 0; bx < w; bx += cs) blocks.push([bx, by, rnd(0.25, 1.2)]);
     // Pixel text: drawn tiny on its own canvas, then scaled up unsmoothed so it stays chunky.
-    var textCache = {};
+    var textCache = {}, textCount = 0;
     function textCanvas(str, color) {
       var key = str + color;
       if (!textCache[key]) {
+        if (++textCount > 300) { textCache = {}; textCount = 1; }  // the score makes new text all game: start over now and then
         var c = document.createElement('canvas'), g = c.getContext('2d');
         g.font = '700 8px monospace'; var tw = Math.ceil(g.measureText(str).width) + 2;
         c.width = tw; c.height = 10; g.font = '700 8px monospace'; g.textBaseline = 'top'; g.fillStyle = color; g.fillText(str, 1, 1);
