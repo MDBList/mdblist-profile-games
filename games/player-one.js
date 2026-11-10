@@ -106,7 +106,8 @@
     warn: function () { tone('square', 880, 880, 0.08, 0.15); tone('square', 880, 880, 0.08, 0.15, 0.14); },
     over: function () { notes('triangle', [392, 330, 262, 196], 0.22, 0.3, 0.35); },
     land: function (v) { hiss(0.07, 0.05 + 0.12 * v, 900, 150); tone('triangle', 190, 85, 0.08, 0.06 + 0.14 * v); },  // v: how hard, 0..1
-    step: function () { hiss(0.03, 0.04, 1800 + Math.random() * 900, 700); }  // a soft footstep, a little different each time
+    step: function () { hiss(0.03, 0.04, 1800 + Math.random() * 900, 700); },  // a soft footstep, a little different each time
+    boost: function () { tone('pulse', 420, 840, 0.14, 0.22); hiss(0.12, 0.18, 2600, 600); }
   };
   function sfx(name, arg) { if (SOUNDS[name]) SOUNDS[name](arg); }
 
@@ -127,11 +128,12 @@
       var g = arcadeLive(), k = e.key;
       if (!g || typing(e) || e.ctrlKey || e.metaKey || e.altKey) return;
       if (g.mode() !== 'play') { if (k === 'p' || k === 'P') { e.preventDefault(); g.start(); } return; }
-      if (/^(ArrowLeft|ArrowRight|ArrowUp|ArrowDown| |a|d|w|A|D|W|Escape)$/.test(k)) e.preventDefault();  // no page scrolling mid-game
+      if (/^(ArrowLeft|ArrowRight|ArrowUp|ArrowDown| |a|d|w|A|D|W|Escape|Shift)$/.test(k)) e.preventDefault();  // no page scrolling mid-game
       if (k === 'Escape') { g.quit(); return; }
       if (k === 'm' || k === 'M') { e.preventDefault(); if (!e.repeat) g.toggleMute(); return; }
       ARCADE.keys[k.toLowerCase()] = true;
       if (!e.repeat && (k === ' ' || k === 'ArrowUp' || k === 'w' || k === 'W')) g.jump();
+      if (!e.repeat && (k === 'Shift' || k === 'shift')) g.boost();
     });
     document.addEventListener('keyup', function (e) {
       ARCADE.keys[e.key.toLowerCase()] = false;
@@ -146,6 +148,7 @@
       if (g.mode() !== 'play') { g.start(); return; }
       var cr = g.canvas.getBoundingClientRect();
       if (g.muteHit(e.clientX - cr.left, e.clientY - cr.top)) { g.toggleMute(); return; }
+      if (g.boostHit && g.boostHit(e.clientX - cr.left, e.clientY - cr.top)) { g.boost(); return; }
       ARCADE.pointer = e.clientX - cr.left; g.jump();
     });
     document.addEventListener('pointermove', function (e) {
@@ -205,7 +208,7 @@
     var SPEAKER_ON = { rows: ['...w.....', '..ww...w.', 'wwww.w..w', 'wwww.w..w', 'wwww.w..w', '..ww...w.', '...w.....'], pal: { w: '#ffffff' } };
     var SPEAKER_OFF = { rows: ['...w.....', '..ww.....', 'wwww.r.r.', 'wwww..r..', 'wwww.r.r.', '..ww.....', '...w.....'], pal: { w: '#ffffff', r: '#ff3b5c' } };
     var RAINBOW = ['#ff3b5c', '#ff9a1f', '#ffe14d', '#6ee05a', '#3ee0ff', '#7a5cff', '#ff5cd6'];
-    var P = { x: w * 0.3, y: ground, vx: 0, vy: 0, onGround: true, dir: 1, inv: 0, hearts: 3, jumpBuf: 0, coyote: 0, squash: 0, chain: 0, stepD: 0 };
+    var P = { x: w * 0.3, y: ground, vx: 0, vy: 0, onGround: true, dir: 1, inv: 0, hearts: 3, jumpBuf: 0, coyote: 0, squash: 0, chain: 0, stepD: 0, boost: 1, boostT: 0, boostBuf: 0, boostDir: 1 };
     var mode = 'demo', loot = [], sparks = [], pops = [], enemies = [], spikes = [], xp = 0, level = 1, levelT = 0, XP_PER_LEVEL = 100;
     var plats = [], meteors = [], craters = [], lava = [], meteorT = 0, platT = 0;
     // The demo plays on the page itself: the card's real buttons, labels, badges and avatar
@@ -478,7 +481,7 @@
       mode = 'play'; score = 0; level = 1; xp = 0; enemies = []; enemyT = 2.5; goT = 0.8; playT = 0; setPlaying(true);
       ground = playGround;
       P.x = w * 0.2; P.y = ground; P.vx = P.vy = 0; P.hearts = 3; P.inv = 1; P.dir = 1;
-      ARCADE.keys = {}; ARCADE.pointer = null; P.onGround = true; P.jumpBuf = 0; P.coyote = 0; P.chain = 0; P.stepD = 0;
+      ARCADE.keys = {}; ARCADE.pointer = null; P.onGround = true; P.jumpBuf = 0; P.coyote = 0; P.chain = 0; P.stepD = 0; P.boost = 1; P.boostT = 0; P.boostBuf = 0;
       P.sleep = 0; P.bonk = null; critter = null;  // wake up, it's game time
       loot = []; sparks = []; pops = []; bumps = []; levelT = 0;  // and a clean screen: nothing left over from the demo
       beginScoring();
@@ -495,6 +498,9 @@
       });
     }
     function jump() { P.jumpBuf = 0.15; }
+    function boost() { P.boostBuf = 0.15; }
+    function boostBox() { var bW = Math.min(150, w * 0.3), x0 = px * 14 + bW + px * 8; return { x0: x0 - px * 2, x1: x0 + Math.round(px * 18.5) + Math.max(px * 10, Math.min(46, bW * 0.4)) + px * 2, y0: h - px * 9, y1: h }; }
+    function boostHit(x, y) { var b = boostBox(); return x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1; }
     // Where the mute button sits (top right, under the score), for drawing and for taps.
     function muteBox() { return { x0: w - px * 20, x1: w - px * 2, y0: px * 10, y1: px * 19 }; }
     function muteHit(x, y) { var b = muteBox(); return x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1; }
@@ -507,7 +513,7 @@
     function releaseJump() { if (mode === 'play' && P.vy < -JUMP * 0.45) P.vy = -JUMP * 0.45; }
     function hurt(fromX) {
       if (P.inv > 0) return;
-      P.chain = 0;
+      P.chain = 0; P.boostT = 0;
       P.hearts--; P.inv = 1.4; sfx(P.hearts > 0 ? 'hurt' : 'over'); P.vy = -JUMP * 0.55; P.vx = (P.x < fromX ? -1 : 1) * RUN * 1.4;
       pop(P.x, P.y - px * 12, '-1', '#ff3b5c'); burst(P.x, P.y - px * 4, 12, ['#ff3b5c', '#ffffff'], 140 * px / 3);
       if (P.hearts <= 0) {
@@ -540,7 +546,7 @@
       session.finish(result);
     }
     function savedBest() { var b = session && session.best(); return b == null ? null : b; }
-    var handle = { canvas: null, seen: 0, mode: function () { return mode; }, start: start, quit: quit, jump: jump, releaseJump: releaseJump, toggleMute: toggleMute, muteHit: muteHit };
+    var handle = { canvas: null, seen: 0, mode: function () { return mode; }, start: start, quit: quit, jump: jump, releaseJump: releaseJump, boost: boost, toggleMute: toggleMute, muteHit: muteHit, boostHit: boostHit };
     if (resumed) for (i = 0; i < 3; i++) { drop(); loot[i].y = ground; loot[i].landed = true; }
     return { intro: 1.6, loop: 6, rest: 4, layered: true, poster: 3.2, draw: function (front, w, h, phase, t, dt, T, edge, back) {
       // Playable only on a single canvas (not under a list header's content) whose card is marked
@@ -614,7 +620,27 @@
         }
       }
       var speed = mode === 'demo' ? RUN * 0.55 : RUN * Math.min(1.6, 1 + 0.07 * (level - 1));
-      P.vx += (target * speed - P.vx) * Math.min(1, dt * (P.inv > 1 ? 2 : 12));
+      if (P.boost < 1) P.boost = Math.min(1, P.boost + dt / 1.5);
+      if (P.boostBuf > 0) {
+        P.boostBuf -= dt;
+        if (P.boost >= 1 && playing) {
+          P.boost = 0; P.boostBuf = 0;
+          var bdir = target || P.dir || 1;
+          P.dir = bdir; P.boostT = 0.16; P.boostDir = bdir;
+          if (P.vy > 0) P.vy *= 0.35;
+          sfx('boost');
+          burst(P.x, P.y - px * 4, 10, ['#3ee0ff', '#ffffff', '#7a5cff'], 90 * px / 3);
+        }
+      }
+      if (P.boostT > 0) {
+        P.boostT -= dt;
+        P.vx = P.boostDir * RUN * 3.4;
+        if (Math.random() < 0.75) {
+          sparks.push({ x: P.x - P.boostDir * px * 3, y: P.y - px * rnd(1, 6), vx: -P.boostDir * rnd(20, 50), vy: rnd(-15, 15), life: 0.25, c: Math.random() < 0.5 ? '#3ee0ff' : '#ffffff' });
+        }
+      } else {
+        P.vx += (target * speed - P.vx) * Math.min(1, dt * (P.inv > 1 ? 2 : 12));
+      }
       if (target) P.dir = target;
       P.coyote = P.onGround ? 0.09 : Math.max(0, P.coyote - dt);
       if (P.jumpBuf > 0) { P.jumpBuf -= dt; if ((P.onGround || P.coyote > 0) && playing) { P.vy = -JUMP; P.jumpBuf = 0; P.coyote = 0; P.onGround = false; P.chain = 0; sfx('jump'); } }
@@ -885,6 +911,13 @@
         var fill = back.createLinearGradient(bx0, 0, bx0 + barW, 0); fill.addColorStop(0, '#6ee05a'); fill.addColorStop(1, '#ffe14d');
         back.fillStyle = fill; back.fillRect(bx0, by0, barW * clamp(xp / XP_PER_LEVEL), px * 2);
         pixelText(back, 'LV' + level, bx0 - px * 7, by0 + px, px * 0.75, '#ffffff', '#15151a');
+
+        var gx0 = bx0 + barW + px * 8;
+        pixelText(back, 'BOOST', gx0, by0 + px, px * 0.65, P.boost >= 1 ? '#3ee0ff' : '#8890a0', '#15151a', 1, 'left');
+        var gbx0 = gx0 + Math.round(px * 18.5), gbarW = Math.max(px * 10, Math.min(46, barW * 0.4));
+        back.fillStyle = dark ? 'rgba(10,10,20,.75)' : 'rgba(20,20,40,.7)'; back.fillRect(gbx0 - px, by0 - px, gbarW + px * 2, px * 4);
+        back.fillStyle = P.boost >= 1 ? '#3ee0ff' : '#1f708b';
+        back.fillRect(gbx0, by0, gbarW * clamp(P.boost), px * 2);
       }
       if (playing) {
         for (i = 0; i < P.hearts; i++) sprite(front, SPRITES.heart, px * 6 + i * px * 6, px * 9, 0.7, 0.7);
@@ -911,7 +944,7 @@
         pixelText(front, stageIndex() !== stageIndex(level - 1) ? stage().name : 'LEVEL ' + level, w / 2, h * 0.3, px * 1.4 * lp, RAINBOW[Math.floor(T * 12) % RAINBOW.length], '#15151a', clamp(levelT * 2.5));
       }
       if (playing && playT < 5) {
-        pixelText(front, w < 420 ? 'ARROWS / WASD + SPACE' : 'MOVE ARROWS / WASD   JUMP SPACE   M MUTE   ESC EXIT', w / 2, h - px * 1.5, px * 0.45, '#ffffff', '#15151a', Math.min(1, 5 - playT));
+        pixelText(front, w < 440 ? 'ARROWS/WASD   SPACE JUMP   SHIFT BOOST' : 'MOVE ARROWS / WASD   JUMP SPACE   BOOST SHIFT   M MUTE   ESC EXIT', w / 2, h - px * 1.5, px * 0.45, '#ffffff', '#15151a', Math.min(1, 5 - playT));
       }
       if (goT > 0) { goT -= dt; pixelText(front, 'GO!', w / 2, h * 0.4, px * 1.6, '#6ee05a', '#15151a', clamp(goT * 2)); }
       if (mode === 'over') {
