@@ -16,8 +16,8 @@
    rocks (big ones split), gunships that stop and fire slow aimed shots, darts that dash across
    after a "!" warning (they can't be shot down: get out of their line), and later saucers that shoot back. Enemies come in groups with a quiet
    stretch of starfield between them, and stop getting busier after a few levels. Wrecks drop
-   coins, gems, hearts, P chips (more guns: a second one kept until a hit, then a three-way spread
-   for a few seconds; a hit costs one) and, rarely, a shield that takes one hit or wears off. Enemies can't be hit until
+   coins, gems, P chips (more guns: a second beside the first, then a pair fanning out on top; each
+   level is kept until a hit costs one) and, rarely, a shield that takes one hit. Enemies can't be hit until
    they're on the card. Every 750 points is an extra heart (1UP); wrecks don't drop hearts, bosses do. Score and level are one
    count: level 2 at 100 points, each level after needs 10 more, every five levels a new sector.
    Every 10 levels a boss arrives after a WARNING (the Mothership, Dreadnought and Leviathan, then
@@ -226,12 +226,12 @@
       dartsFrom: 5, dartChance: 0.12,      // darts: share of spawns
       dronesShootFrom: 6, droneShots: 0.14,// saucers shoot back, shots per second each
       fireGap: 0.24,                       // seconds between volleys: the guns fire by themselves
-      powerTime: [0, 0, 0, 5],             // seconds at each number of guns (0: kept until a hit): the three-way spread is a short burst
-      shieldTime: 12,                      // seconds a shield lasts if nothing hits it
+      powerTime: [0, 0, 0, 0],             // seconds at each power level (0: kept until a hit, as players expect)
+      shieldTime: 0,                       // seconds a shield lasts if nothing hits it (0: until something does)
       bonusDrop: 0.6, chipChance: 0.25,    // chance a whole wave or a gunship drops something, and that it's a P chip (else a gem)
       lootDrop: 0.2, powerDrop: 0.01,      // chance any other wreck drops a coin or gem, or a P chip
-      maxShots: [7, 11, 15],               // most of your bullets on screen at once with 1, 2 and 3 guns
-      spread: 0.12,                        // how wide the three-gun spread fans out
+      maxShots: [7, 11, 19],               // most of your bullets on screen at once at each power level (1, 2, 4 shots a volley)
+      spread: 0.12,                        // how wide the top level's outer pair fans out
       invincible: 1.1,                     // blink time after a hit
       heartDrop: 0, maxHearts: 5,          // chance a wreck drops a heart (0: hearts come from points and bosses), most you can hold
       lifeEvery: 750,                      // an extra heart (1UP) every this many points: steady, never luck (about as often
@@ -938,11 +938,11 @@
         if (mine && S.fireT <= 0 && bullets.length < HARD.maxShots[S.power - 1]) {
           S.fireT = HARD.fireGap;
           var nose = S.x + px * 5;
-          if (S.power === 2) { bullets.push({ x: nose, y: S.y - px * 2, vx: BULLET, vy: 0 }); bullets.push({ x: nose, y: S.y + px * 2, vx: BULLET, vy: 0 }); }
-          else {
-            bullets.push({ x: nose, y: S.y, vx: BULLET, vy: 0 });
-            if (S.power >= 3) { bullets.push({ x: nose, y: S.y, vx: BULLET, vy: -BULLET * HARD.spread }); bullets.push({ x: nose, y: S.y, vx: BULLET, vy: BULLET * HARD.spread }); }
-          }
+          // One gun; two side by side; then those two plus a pair fanning out. Each level is the one
+          // before and more, so the top one is never weaker against a boss's core.
+          if (S.power === 1) bullets.push({ x: nose, y: S.y, vx: BULLET, vy: 0 });
+          else { bullets.push({ x: nose, y: S.y - px * 2, vx: BULLET, vy: 0 }); bullets.push({ x: nose, y: S.y + px * 2, vx: BULLET, vy: 0 }); }
+          if (S.power >= 3) { bullets.push({ x: nose, y: S.y, vx: BULLET, vy: -BULLET * HARD.spread }); bullets.push({ x: nose, y: S.y, vx: BULLET, vy: BULLET * HARD.spread }); }
           sfx('shoot');
         }
       } else if (mode === 'demo') {
@@ -1007,7 +1007,7 @@
         S.power--; S.powerT = S.power > 1 ? HARD.powerTime[S.power] : 0;
         pop(S.x, S.y - px * 8, 'POWER DOWN', '#ff9a1f'); sfx('powerdown');
       }
-      if (playing && S.shield && (S.shieldT -= dt) <= 0) { S.shield = false; pop(S.x, S.y - px * 8, 'SHIELD OFF', '#3ee0ff'); sfx('powerdown'); }
+      if (playing && S.shield && HARD.shieldTime && (S.shieldT -= dt) <= 0) { S.shield = false; pop(S.x, S.y - px * 8, 'SHIELD OFF', '#3ee0ff'); sfx('powerdown'); }
       if (shake > 0) shake -= dt;
 
       // Exhaust: a flicker of flame behind the ship.
@@ -1217,7 +1217,7 @@
         var tilt = playing ? Math.max(-0.25, Math.min(0.25, S.vy / SPEED * 0.25)) : 0;
         var rollY = S.roll > 0 ? Math.cos((1 - S.roll / ROLL) * TAU) : 1;  // a barrel roll squashes it flat, over and back
         sprite(back, SHIP, S.x, S.y, S.dir, Math.abs(rollY) < 0.15 ? 0.15 * (rollY < 0 ? -1 : 1) : rollY, tilt * S.dir);
-        if (S.shield && mode === 'play' && !(S.shieldT < 2 && Math.floor(frameT * 8) % 2)) {  // a bubble of pixels around the ship; blinks before it wears off
+        if (S.shield && mode === 'play' && !(HARD.shieldTime && S.shieldT < 2 && Math.floor(frameT * 8) % 2)) {  // a bubble of pixels around the ship; blinks before it wears off
           back.save(); back.globalAlpha = 0.55 + (CALM ? 0 : 0.25 * Math.sin(frameT * 6)); back.fillStyle = '#3ee0ff';
           for (var sa = 0; sa < 20; sa++) back.fillRect(snap(S.x + Math.cos(sa / 20 * TAU) * px * 8), snap(S.y + Math.sin(sa / 20 * TAU) * px * 6), px, px);
           back.restore();
