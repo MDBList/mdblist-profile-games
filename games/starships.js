@@ -404,7 +404,8 @@
     var mode = 'demo', bullets = [], shots = [], enemies = [], loot = [], sparks = [], pops = [];
     var score = 0, hi = 0, xp = 0, level = 1, levelT = 0, goT = 0, overT = 0, playT = 0, frameT = 0, spawnT = 0, shake = 0, host = null;
     var waves = {}, waveId = 0, hitSoundT = 0, spawns = 0;
-    var boss = null, bossWarn = 0, nextBoss = BOSS_EVERY, bossTier = 1, bossBannerT = 0, alarmT = 0;
+    var boss = null, bossWarn = 0, bossHold = 0, nextBoss = BOSS_EVERY, bossTier = 1, bossBannerT = 0, alarmT = 0;
+    var BOSS_HOLD = 3;  // after the WARNING, at most this many seconds for the screen to clear before the boss comes in anyway
     var paused = false, newBest = false, nextLife = HARD.lifeEvery;
     // What a game was made of, for the GAME OVER screen.
     var stats = { kills: 0, bosses: 0, sector: 0 };
@@ -555,7 +556,7 @@
       if (mode === 'over' && overT < 1.2) return;  // let GAME OVER sink in first
       mode = 'play'; score = 0; level = 1; xp = 0; levelT = 0; goT = 1; playT = 0; spawnT = HARD.firstSpawn; shake = 0;
       S.x = w * 0.15; S.y = (TOP + BOTTOM) / 2; S.vx = S.vy = 0; S.dir = 1; S.inv = 1; S.hearts = 3; S.power = 1; S.fireT = 0;
-      bullets = []; shots = []; enemies = []; loot = []; sparks = []; pops = []; waves = {}; boss = null; bossWarn = 0; nextBoss = BOSS_EVERY; bossBannerT = 0; demoFoes = []; demoCoins = []; demoComet = null; S.roll = S.boost = 0;
+      bullets = []; shots = []; enemies = []; loot = []; sparks = []; pops = []; waves = {}; boss = null; bossWarn = bossHold = 0; nextBoss = BOSS_EVERY; bossBannerT = 0; demoFoes = []; demoCoins = []; demoComet = null; S.roll = S.boost = 0;
       S.powerT = 0; S.shield = false; S.shieldT = 0; paused = false; newBest = false; nextLife = HARD.lifeEvery; spawns = 0;
       stats = { kills: 0, bosses: 0, sector: 0 };
       beginScoring();
@@ -564,8 +565,9 @@
     }
     function quit() {
       if (mode === 'play') sfxSleep(400);
-      mode = 'demo'; bullets = []; shots = []; enemies = []; loot = []; boss = null; bossWarn = 0; paused = false; setPlaying(false);
-      levelT = goT = bossBannerT = shake = 0; pops = []; S.inv = 0;  // no banners, shake or blinking left over in the demo demoFoeT = rnd(1, 2); demoCometT = rnd(10, 16);
+      mode = 'demo'; bullets = []; shots = []; enemies = []; loot = []; boss = null; bossWarn = bossHold = 0; paused = false; setPlaying(false);
+      levelT = goT = bossBannerT = shake = 0; pops = []; S.inv = 0;  // no banners, shake or blinking left over in the demo
+      demoFoeT = rnd(1, 2); demoCometT = rnd(10, 16);
     }
     function toggleMute() {
       SFX.muted = !SFX.muted;
@@ -591,8 +593,11 @@
       xp -= xpNeed(); level++; levelT = 1.6;
       burst(w / 2, h * 0.3, 36, RAINBOW, 220 * px / 3); sfx('level'); stats.sector = Math.max(stats.sector, stageIndex());
       if (HARD.heartEveryLevels && level % HARD.heartEveryLevels === 0 && S.hearts < HARD.maxHearts) { S.hearts++; pop(S.x, S.y - px * 12, '1UP', '#ff6b85'); sfx('life'); }  // a sure heart
-      if (stageIndex() !== before) { enemies = []; shots = []; S.inv = Math.max(S.inv, 1.2); spawnT = 1.5; }  // a fresh sector
-      if (level >= nextBoss && !boss && !bossWarn) { bossTier = Math.round(nextBoss / BOSS_EVERY); bossWarn = 2.5; alarmT = 0; enemies = []; shots = []; }  // here it comes
+      if (stageIndex() !== before) spawnT = Math.max(spawnT, 2 * Math.min(HARD.paceMax, 1 + HARD.paceStep * (level - 1)));  // a new sector: its sky now, a 2 s breather, then its enemies (nothing vanishes)
+      if (level >= nextBoss && !boss && !bossWarn) {  // here it comes: no new enemies from now on, and gunships move along
+        bossTier = Math.round(nextBoss / BOSS_EVERY); bossWarn = 2.5; bossHold = 0; alarmT = 0;
+        enemies.forEach(function (e) { if (e.kind === 'gun') e.life = Math.min(e.life, e.t); });
+      }
     }
     function gain(points) {
       score += points; xp += points;
@@ -635,7 +640,7 @@
       pop(S.x, S.y - px * 8, '-1', '#ff3b5c'); burst(S.x, S.y, 14, ['#ff3b5c', '#ffffff', '#4f7cff'], 150 * px / 3);
       if (S.hearts > 0) { sfx('hurt'); return; }
       if (savedBest() != null) hi = savedBest();  // on a site that keeps scores, its best is the one to beat
-      mode = 'over'; overT = 0; enemies = []; shots = []; bullets = []; loot = []; boss = null; bossWarn = 0; newBest = score > hi;
+      mode = 'over'; overT = 0; enemies = []; shots = []; bullets = []; loot = []; boss = null; bossWarn = bossHold = 0; newBest = score > hi;
       burst(S.x, S.y, 40, ['#ff6a1f', '#ffd23f', '#ffffff', '#4f7cff'], 260 * px / 3); sfx('bigboom'); sfx('over'); sfxSleep(1500);
       if (score > hi) { hi = score; try { window.localStorage.setItem('mdb-starships-best', String(hi)); } catch (e) { /* storage blocked */ } }
       finishScoring();
@@ -757,9 +762,17 @@
     }
     function bossUpdate(wdt, dt) {
       if (bossWarn > 0) {
+        // The WARNING: no new enemies, and the ones about finish their run (shoot them for points).
+        // Once it's over the boss waits for a clear screen, up to BOSS_HOLD seconds; whatever is
+        // still flying then blows up (no points), so the fight starts clean.
         bossWarn -= dt; alarmT -= dt;
         if (alarmT <= 0) { alarmT = 0.5; sfx('alarm'); }
-        if (bossWarn <= 0) { bossWarn = 0; boss = makeBoss(bossTier); }
+        if (bossWarn <= 0 && enemies.length && bossHold < BOSS_HOLD) { bossHold += dt; bossWarn = 0.001; }  // holding: still 'the WARNING' everywhere it's read
+        else if (bossWarn <= 0) {
+          enemies.forEach(function (e) { burst(e.x, e.y, 14, WRECK[e.kind] || ['#ffffff'], 140 * px / 3); });
+          if (enemies.length) sfx('boom');
+          enemies = []; shots = []; bossWarn = bossHold = 0; boss = makeBoss(bossTier);  // and a clear sky: their shots go too
+        }
         return;
       }
       if (!boss) return;
@@ -911,7 +924,7 @@
       if (paused) dt = 0;  // frozen: nothing moves, timers hold
       var playing = mode === 'play' && !paused, mine = SHIPS.inst === handle;
       var pace = playing || mode === 'over' ? Math.min(HARD.paceMax, 1 + HARD.paceStep * (level - 1)) : 1;
-      if (boss || bossWarn > 0) pace = Math.min(HARD.bossPace[2], HARD.bossPace[0] + HARD.bossPace[1] * (bossTier - 1));  // bosses go by their own tier
+      if (boss) pace = Math.min(HARD.bossPace[2], HARD.bossPace[0] + HARD.bossPace[1] * (bossTier - 1));  // bosses go by their own tier (from when they arrive)
       var wdt = dt * pace;
       frameT += dt; if (mode !== 'demo') playT += dt;
       if (mode === 'play' && SFX.ctx) sfxWake();
@@ -1282,7 +1295,7 @@
         pixelText(front, boss.kind.name, w / 2, hby + px * 6, px * 0.5, '#ffffff', '#15151a');
       }
       if (bossWarn > 0) {
-        var wa = CALM || Math.floor(bossWarn * 4) % 2 ? 1 : 0.35;
+        var wa = CALM || Math.floor(frameT * 4) % 2 ? 1 : 0.35;
         front.fillStyle = 'rgba(255,40,60,' + (0.12 * wa) + ')'; front.fillRect(0, 0, w, h);
         pixelText(front, 'WARNING', w / 2, h * 0.52, px * 1.6, '#ff3b3b', '#15151a', wa);
         pixelText(front, bossKind(bossTier).name + ' APPROACHING', w / 2, h * 0.66, px * 0.6, '#ffffff', '#15151a', wa);
