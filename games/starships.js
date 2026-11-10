@@ -21,7 +21,7 @@
    they're on the card. Every 750 points is an extra heart (1UP); wrecks don't drop hearts, bosses do. Score and level are one
    count: level 2 at 100 points, each level after needs 10 more, every five levels a new sector.
    Every 10 levels a boss arrives after a WARNING (the Mothership, Dreadnought and Leviathan, then
-   round again): almost the play area's height, wings reaching up and down, each its own shape
+   round again as MK II, III..., recoloured): almost the play area's height, wings reaching up and down, each its own shape
    with its own move (swoops, lunges, a weave). Shots glance off its armour. Its core, at the
    front, takes damage only while its hatch is open, when it attacks (each attack charges up
    first, the core flashing white). The two turrets on its wing tips can be shot off: that stops
@@ -427,7 +427,16 @@
       session.finish(result);
     }
     function savedBest() { var b = session && session.best(); return b == null ? null : b; }
-    function bossKind(tier) { return BOSS_KINDS[(tier - 1) % BOSS_KINDS.length]; }
+    // Round two and on, a boss comes back tougher and looks it: MK II, III..., its colours turned
+    // (each colour's red, green and blue shifted along one, per round).
+    var bossLoops = {};
+    function bossKind(tier) {
+      var base = BOSS_KINDS[(tier - 1) % BOSS_KINDS.length], loop = Math.floor((tier - 1) / BOSS_KINDS.length), pal = {};
+      if (!loop) return base;
+      if (bossLoops[tier]) return bossLoops[tier];
+      Object.keys(base.pal).forEach(function (ch) { var c = base.pal[ch]; for (var i = 0; i < loop; i++) c = '#' + c.slice(5, 7) + c.slice(1, 3) + c.slice(3, 5); pal[ch] = c; });
+      return (bossLoops[tier] = Object.assign({}, base, { name: base.name + ' MK ' + ['II', 'III', 'IV', 'V', 'VI'][Math.min(loop, 5) - 1], pal: pal }));
+    }
     // The demo's own little show: a target (a rock or a saucer) every few seconds, the coin it
     // leaves, and the ship's barrel rolls (S.roll counts down one) and speed bursts (S.boost).
     var demoFoes = [], demoFoeT = rnd(1, 2), demoCoins = [], demoComet = null, demoCometT = rnd(10, 16), rollT = rnd(5, 8), ROLL = 0.6, hvSeen = false;
