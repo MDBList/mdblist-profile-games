@@ -205,9 +205,10 @@
     scene = scene || {};
     var px = Math.max(2, Math.round(Math.min(h, 300) / 75)), i;
     // The demo flies just above the card's busy bottom (scene.ground: on the profile, the top of
-    // the stats row). In a game the ship has the whole card, below the HUD and above the XP bar.
+    // the stats row). In a game the ship (and everything else) has the whole card but a thin edge:
+    // the HUD is drawn over the play, with a soft backing so it stays readable.
     var floorY = scene.ground != null ? Math.min(scene.ground, h - px * 9) : h - px * 9;
-    var demoY = floorY - px * 5, TOP = px * 14, BOTTOM = h - px * 8;
+    var demoY = floorY - px * 5, TOP = px * 5, BOTTOM = h - px * 5;
     var SPEED = 70 * px, BULLET = 200 * px;
     // Difficulty, all in one place (the first, easier numbers in brackets).
     var HARD = {
@@ -1243,6 +1244,7 @@
         pixelText(back, 'LV' + level, bx0 - px * 7, by0 + px, px * 0.75, '#ffffff', '#15151a');
       }
       if (mode === 'play') {
+        front.fillStyle = 'rgba(10,10,20,.35)'; front.fillRect(px, px, px * Math.max(24, 6 * S.hearts + 8), px * 14);  // behind hearts and guns
         for (i = 0; i < S.hearts; i++) sprite(front, LOOT.heart, px * 6 + i * px * 6, px * 6, 0.7, 0.7);
         if (S.shield) sprite(front, LOOT.shield, px * 6 + S.hearts * px * 6, px * 6, 0.7, 0.7);
         pixelText(front, 'GUNS', px * 3, px * 12, px * 0.5, '#ffffff', '#15151a', 1, 'left');
