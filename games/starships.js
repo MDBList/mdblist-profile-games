@@ -579,10 +579,12 @@
       paused = force === true ? true : !paused;
       SHIPS.pointer = null; SHIPS.down = {}; sfx('pause');
     }
-    function pauseBox() { return { x0: w - px * 40, x1: w - px * 22, y0: px * 10, y1: px * 19 }; }
+    // On screen during a game: a small pause button (top right, under the score). Sound is on the
+    // PAUSED screen (and the M key), so play has one small control, not a row of boxes.
+    function pauseBox() { return { x0: w - px * 12, x1: w - px * 2, y0: px * 10, y1: px * 19 }; }
     function pauseHit(x, y) { var b = pauseBox(); return x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1; }
-    function muteBox() { return { x0: w - px * 20, x1: w - px * 2, y0: px * 10, y1: px * 19 }; }
-    function muteHit(x, y) { var b = muteBox(); return x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1; }
+    function muteBox() { return { x0: w / 2 - px * 26, x1: w / 2 + px * 26, y0: h * 0.76 - px * 5, y1: h * 0.76 + px * 5 }; }
+    function muteHit(x, y) { var b = muteBox(); return paused && x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1; }
 
     function levelUp() {
       var before = stageIndex();
@@ -928,7 +930,7 @@
         S.dir = 1;
         S.vx += (tx * SPEED - S.vx) * Math.min(1, dt * (S.inv > 1.2 ? 3 : 12));
         S.vy += (ty * SPEED - S.vy) * Math.min(1, dt * (S.inv > 1.2 ? 3 : 12));
-        S.x = Math.max(px * 8, Math.min(w * 0.75, S.x + S.vx * dt));
+        S.x = Math.max(px * 8, Math.min(w - px * 8, S.x + S.vx * dt));  // the whole card: the right side is risky, not walled off
         if (boss && boss.state === 'fight' && S.x > boss.x - boss.W / 2 - px * 6) {  // no flying into a boss: its nose stops you, and a lunge hits
           S.x = Math.max(px * 8, boss.x - boss.W / 2 - px * 6);
           if (boss.lunge > 0) hurt(boss.x, boss.y);
@@ -1257,16 +1259,11 @@
         pixelText(front, 'SCORE ' + score, w - px * 4, px * 6, px * 0.65, '#ffffff', '#15151a', 1, 'right');
         if (savedBest() != null && savedBest() > hi) hi = savedBest();
         if (!boss) pixelText(front, 'HI ' + Math.max(hi, score), w / 2, px * 6, px * 0.55, '#ffe14d', '#15151a');
-        var pb = pauseBox();  // the pause button: two bars, or a play arrow while paused
+        var pb = pauseBox();  // the pause button, faint so it stays out of the way: two bars
+        front.save(); front.globalAlpha = 0.6;
         front.fillStyle = 'rgba(10,10,20,.55)'; front.fillRect(pb.x0, pb.y0, pb.x1 - pb.x0, pb.y1 - pb.y0);
-        pixelText(front, 'P', pb.x0 + px * 4, (pb.y0 + pb.y1) / 2 + px * 0.5, px * 0.6, '#ffe14d', '#15151a');
-        front.fillStyle = '#ffffff';
-        if (paused) for (i = 0; i < 4; i++) front.fillRect(pb.x1 - px * 9 + i * px, pb.y0 + px * (1.5 + i), px, px * (6 - i * 2));
-        else { front.fillRect(pb.x1 - px * 9, pb.y0 + px * 1.5, px * 2, px * 6); front.fillRect(pb.x1 - px * 5, pb.y0 + px * 1.5, px * 2, px * 6); }
-        var mb = muteBox();
-        front.fillStyle = 'rgba(10,10,20,.55)'; front.fillRect(mb.x0, mb.y0, mb.x1 - mb.x0, mb.y1 - mb.y0);
-        pixelText(front, 'M', mb.x0 + px * 4, (mb.y0 + mb.y1) / 2 + px * 0.5, px * 0.6, '#ffe14d', '#15151a');
-        sprite(front, SFX.muted ? SPEAKER_OFF : SPEAKER_ON, mb.x1 - px * 6.5, (mb.y0 + mb.y1) / 2);
+        front.fillStyle = '#ffffff'; front.fillRect(pb.x0 + px * 3, pb.y0 + px * 1.5, px * 1.5, px * 6); front.fillRect(pb.x1 - px * 4.5, pb.y0 + px * 1.5, px * 1.5, px * 6);
+        front.restore();
       } else if (mode === 'demo' && playable && scene.prompt !== false && phase !== 'intro' && Math.floor(frameT * 1.6) % 2) {
         pixelText(front, 'P / TAP TO PLAY', w - px * 4, by0 + px, px * 0.6, '#ffe14d', '#15151a', 0.9, 'right');
       }
@@ -1298,6 +1295,10 @@
         front.fillStyle = 'rgba(12,10,28,.6)'; front.fillRect(0, 0, w, h);
         pixelText(front, 'PAUSED', w / 2, h * 0.42, px * 1.5, '#ffffff', '#15151a');
         pixelText(front, 'P / TAP TO CONTINUE   ESC TO QUIT', w / 2, h * 0.6, px * 0.6, '#ffe14d', '#15151a');
+        var mb = muteBox();  // sound, on the PAUSED screen: tap it (or press M)
+        front.fillStyle = 'rgba(10,10,20,.7)'; front.fillRect(mb.x0, mb.y0, mb.x1 - mb.x0, mb.y1 - mb.y0);
+        sprite(front, SFX.muted ? SPEAKER_OFF : SPEAKER_ON, mb.x0 + px * 7, (mb.y0 + mb.y1) / 2);
+        pixelText(front, (SFX.muted ? 'SOUND OFF' : 'SOUND ON') + '  (M)', mb.x0 + px * 13, (mb.y0 + mb.y1) / 2, px * 0.55, '#ffffff', '#15151a', 1, 'left');
       }
       if (goT > 0) { goT -= dt; pixelText(front, 'LAUNCH!', w / 2, h * 0.4, px * 1.6, '#3ee0ff', '#15151a', clamp(goT * 2)); }
       if (mode === 'over') {
